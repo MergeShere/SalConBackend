@@ -1,0 +1,11 @@
+asgiref==3.8.1
+Django==5.1.7
+django-cors-headers==3.14.0
+django-jazzmin==3.0.1
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.2.2
+PyJWT==2.6.0
+pytz==2025.2
+shortuuid==1.0.13
+sqlparse==0.5.3
+tzdata==2025.2
