@@ -3,7 +3,7 @@ from rest_framework import serializers
 from userauths.models import User, Profile
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-class MyToken(TokenObtainPairSerializer):   # Creates our custom token class that inherits from the basic one
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):   # Creates our custom token class that inherits from the basic one
 
 
     @classmethod
@@ -18,7 +18,7 @@ class MyToken(TokenObtainPairSerializer):   # Creates our custom token class tha
         token= super().get_token(user)  #Gets the basic token from the parent class (with standard fields like user ID)
 
 
-# Adds extra information to the token:
+# This will Adds extra information to the token:
         token['full_name']= user.full_name
         token['email'] = user.email
         token['username']= user.username
@@ -41,6 +41,11 @@ class RegistrationSerializer(serializers.ModelSerializer):
         model = User
         fields = ['__all__', 'password', 'password2']
 
+    def validate(self, attrs):
+        if attrs["password"] != ["password2"]:
+            raise serializers.ValidatioError({"Password": "Password does not match"})
+        return attrs
+
 
 
 
@@ -55,7 +60,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 #    serializing the profile 
 
-class ProfileSterilizer(serializers.ModelSterilizer):
+class ProfileSterilizer(serializers.ModelSerializer):
     # user = UserSerializer()
     class Meta:
         model = Profile
