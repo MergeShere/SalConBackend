@@ -33,18 +33,54 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):   # Creates our cu
 
 
         return token  #Returns the complete token with all our custom information
+# class RegistrationSerializer(serializers.ModelSerializer):
+#     password = serializers.CharField(write_only = True,validators=[validate_password], required= True)
+#     confirm_password = serializers.CharField(write_only = True, required= True)
+
+#     class Meta:
+#         model = User
+#         fields = ['full_name','phone','username','email', 'password', 'confirm_password']
+
+#     def validate(self, attrs):
+#         if attrs["password"] != attrs["confirm_password"]:
+#             raise serializers.ValidationError({"Password": "Password does not match"})
+#         return attrs
+
 class RegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only = True,validators=[validate_password], required= True)
-    password2 = serializers.CharField(write_only = True, required= True)
+    password = serializers.CharField(write_only=True, validators=[validate_password], required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ['__all__', 'password', 'password2']
+        fields = ['full_name', 'username', 'email', 'phone', 'password', 'confirm_password']  # Make sure 'phone' is in fields
 
     def validate(self, attrs):
-        if attrs["password"] != ["password2"]:
-            raise serializers.ValidatioError({"Password": "Password does not match"})
+        if attrs["password"] != attrs["confirm_password"]:  # Fixed comparison
+            raise serializers.ValidationError({"Password": "Password does not match"})
         return attrs
+    
+    def create(self, validated_data):
+        user = User.objects.create(
+            full_name=validated_data['full_name'],
+            username=validated_data['username'],
+            email=validated_data['email'],
+            phone=validated_data.get('phone', '')  # Using get() in case phone is optional
+        )
+        
+        user.set_password(validated_data['password'])  # Fixed: Using validated_data instead of validate_password
+        user.save()
+        return user
+    
+    def create(self, validated_data):
+        user = User.objects.create(
+            full_name = validated_data['full_name'],
+            phone = validated_data['phone'],
+            email = validated_data['email'],)
+        
+        email_user, mobile = user.email.split("@")    
+        user.set_password(validated_data['password'])
+        user.save()
+        return user
 
 
 
