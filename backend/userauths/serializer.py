@@ -2,6 +2,9 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers 
 from userauths.models import User, Profile
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_decode
+from rest_framework.exceptions import AuthenticationFailed
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):   # Creates our custom token class that inherits from the basic one
 
@@ -94,7 +97,7 @@ class UserSerializer(serializers.ModelSerializer):
     # if you don't ant to include some field u can use exclude
    #exclude = ['full_name']
 
-#    serializing the profile 
+#    serializing the profile
 
 class ProfileSterilizer(serializers.ModelSerializer):
     # user = UserSerializer()
@@ -113,3 +116,39 @@ class ProfileSterilizer(serializers.ModelSerializer):
 
         return response
     # Returns the modified dictionary (now including the nested user data) as the final serialized output.
+
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    class Meta:
+        fields = ("email",)
+
+class SetNewPasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(min_length=6, max_length=100, write_only=True)
+    confirm_password = serializers.CharField(min_length=6, max_length=100, write_only=True)
+    encoded_pk = serializers.CharField(write_only=True)
+    token = serializers.CharField(write_only=True)
+
+    class Meta:
+        fields = ("password", "confirm_password", "encoded_pk", "token")
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['confirm_password']:
+            raise serializers.ValidationError("Passwords do not match")
+        
+        encoded_pk = attrs.get('encoded_pk', '')
+        token = attrs.get('token', '')
+
+        try:
+            pk = urlsafe_base64_decode(encoded_pk).decode()
+            user = User.objects.get(pk=pk)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            raise AuthenticationFailed('Invalid reset link', 401)
+
+        if not PasswordResetTokenGenerator().check_token(user, token):
+            raise AuthenticationFailed('The reset link is invalid', 401)
+        
+        user.set_password(attrs['password'])
+        user.save()
+
+        return attrs
