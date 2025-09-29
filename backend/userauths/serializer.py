@@ -117,11 +117,6 @@ class ProfileSterilizer(serializers.ModelSerializer):
         return response
     # Returns the modified dictionary (now including the nested user data) as the final serialized output.
 
-class PasswordResetSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    class Meta:
-        fields = ("email",)
 
 class SetNewPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(min_length=6, max_length=100, write_only=True)
