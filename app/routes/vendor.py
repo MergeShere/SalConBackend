@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 
@@ -10,10 +10,13 @@ from app.core.security import verify_token
 from app.services.auth import AuthService
 from app.services.salon_service import SalonService
 from app.services.booking_service import BookingService
+from app.services.metamap_service import MetaMapService
 from app.core.cloudinary import upload_image
 from app.models.user import User
-from app.models.salon import Salon, Service, SalonImage
+from app.models.salon import Salon, Service, SalonImage, Review
 from app.models.booking import Booking, BookingStatus
+from app.models.payment import Payment, PaymentStatus
+from app.models.kyc import VendorKYC
 
 router = APIRouter()
 
@@ -408,4 +411,318 @@ def get_revenue_analytics(
     return {
         "period": period,
         "data": [{"label": str(item[0]), "revenue": float(item[1] or 0)} for item in revenue_data]
+    }
+
+
+# ---------------------------------------------------------------------------
+# Subscription / trial status
+# ---------------------------------------------------------------------------
+
+@router.get("/subscription/status")
+def get_subscription_status(
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns the vendor's current subscription / trial status with a live countdown.
+    """
+    kyc_record = db.query(VendorKYC).filter(VendorKYC.vendor_id == vendor.id).first()
+
+    subscription = MetaMapService.get_subscription_status(vendor)
+    subscription["kyc_status"] = kyc_record.status if kyc_record else "not_started"
+    subscription["kyc_method"] = (
+        "metamap" if (kyc_record and kyc_record.metamap_verification_id) else
+        "manual" if kyc_record else None
+    )
+    return subscription
+
+
+# ---------------------------------------------------------------------------
+# Payment history
+# ---------------------------------------------------------------------------
+
+@router.get("/payments/history")
+def get_payment_history(
+    payment_status: Optional[str] = Query(None, alias="status"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """
+    All payments received across the vendor's salons with optional filters.
+    """
+    from sqlalchemy import func
+
+    salon_ids = [
+        s.id for s in db.query(Salon.id).filter(Salon.owner_id == vendor.id).all()
+    ]
+    if not salon_ids:
+        return {"total": 0, "page": page, "limit": limit, "payments": []}
+
+    query = (
+        db.query(Payment)
+        .options(joinedload(Payment.booking))
+        .join(Payment.booking)
+        .filter(Booking.salon_id.in_(salon_ids))
+    )
+
+    if payment_status:
+        query = query.filter(Payment.status == payment_status)
+    if start_date:
+        query = query.filter(Payment.created_at >= start_date)
+    if end_date:
+        query = query.filter(Payment.created_at <= end_date)
+
+    total = query.count()
+    payments = (
+        query.order_by(Payment.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit,
+        "payments": [
+            {
+                "id": p.id,
+                "reference": p.reference,
+                "amount": float(p.amount),
+                "currency": p.currency,
+                "status": p.status,
+                "payment_method": p.payment_method,
+                "booking_id": p.booking_id,
+                "paid_at": p.paid_at,
+                "created_at": p.created_at,
+            }
+            for p in payments
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Customer analytics
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/customers")
+def customer_analytics(
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """
+    Insights about customers who booked at the vendor's salons:
+    total unique customers, returning vs new, top customers by spend.
+    """
+    from sqlalchemy import func, distinct
+
+    salon_ids = [
+        s.id for s in db.query(Salon.id).filter(Salon.owner_id == vendor.id).all()
+    ]
+    if not salon_ids:
+        return {"total_customers": 0, "returning_customers": 0, "top_customers": []}
+
+    total_unique = (
+        db.query(func.count(distinct(Booking.customer_id)))
+        .filter(Booking.salon_id.in_(salon_ids))
+        .scalar() or 0
+    )
+
+    # Returning = placed more than one booking
+    returning = (
+        db.query(Booking.customer_id)
+        .filter(Booking.salon_id.in_(salon_ids))
+        .group_by(Booking.customer_id)
+        .having(func.count(Booking.id) > 1)
+        .count()
+    )
+
+    top_customers = (
+        db.query(
+            Booking.customer_id,
+            func.count(Booking.id).label("total_bookings"),
+            func.sum(Booking.total_amount).label("total_spent"),
+        )
+        .filter(
+            Booking.salon_id.in_(salon_ids),
+            Booking.status == BookingStatus.COMPLETED,
+        )
+        .group_by(Booking.customer_id)
+        .order_by(func.sum(Booking.total_amount).desc())
+        .limit(10)
+        .all()
+    )
+
+    customer_ids = [r.customer_id for r in top_customers]
+    customers_map = {
+        u.id: u
+        for u in db.query(User).filter(User.id.in_(customer_ids)).all()
+    }
+
+    return {
+        "total_customers": total_unique,
+        "returning_customers": returning,
+        "new_customers": total_unique - returning,
+        "top_customers_by_spend": [
+            {
+                "customer_id": r.customer_id,
+                "name": f"{customers_map[r.customer_id].first_name} {customers_map[r.customer_id].last_name}"
+                if r.customer_id in customers_map else "Unknown",
+                "total_bookings": r.total_bookings,
+                "total_spent_ghs": float(r.total_spent or 0),
+            }
+            for r in top_customers
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Service analytics
+# ---------------------------------------------------------------------------
+
+@router.get("/analytics/services")
+def service_analytics(
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """Top services by booking count and revenue."""
+    from sqlalchemy import func
+    from app.models.booking import BookingItem
+
+    salon_ids = [
+        s.id for s in db.query(Salon.id).filter(Salon.owner_id == vendor.id).all()
+    ]
+    if not salon_ids:
+        return {"top_services": []}
+
+    top_services = (
+        db.query(
+            Service.name,
+            func.count(BookingItem.id).label("bookings"),
+            func.sum(BookingItem.price * BookingItem.quantity).label("revenue"),
+        )
+        .join(BookingItem, BookingItem.service_id == Service.id)
+        .join(Booking, Booking.id == BookingItem.booking_id)
+        .filter(Booking.salon_id.in_(salon_ids))
+        .group_by(Service.id, Service.name)
+        .order_by(func.count(BookingItem.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    return {
+        "top_services": [
+            {
+                "service": r.name,
+                "total_bookings": r.bookings,
+                "total_revenue_ghs": float(r.revenue or 0),
+            }
+            for r in top_services
+        ]
+    }
+
+
+# ---------------------------------------------------------------------------
+# Review management
+# ---------------------------------------------------------------------------
+
+@router.get("/reviews")
+def get_vendor_reviews(
+    salon_id: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """All reviews left for the vendor's salons."""
+    salon_ids = [
+        s.id for s in db.query(Salon.id).filter(Salon.owner_id == vendor.id).all()
+    ]
+    if not salon_ids:
+        return {"total": 0, "reviews": []}
+
+    query = db.query(Review).filter(Review.salon_id.in_(salon_ids))
+    if salon_id:
+        if salon_id not in salon_ids:
+            raise HTTPException(status_code=403, detail="Not your salon")
+        query = query.filter(Review.salon_id == salon_id)
+
+    total   = query.count()
+    reviews = query.order_by(Review.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+
+    customer_ids = [r.customer_id for r in reviews]
+    customers_map = {
+        u.id: u
+        for u in db.query(User).filter(User.id.in_(customer_ids)).all()
+    }
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "reviews": [
+            {
+                "id": r.id,
+                "salon_id": r.salon_id,
+                "rating": r.rating,
+                "comment": r.comment,
+                "customer_name": f"{customers_map[r.customer_id].first_name} {customers_map[r.customer_id].last_name}"
+                if r.customer_id in customers_map else "Anonymous",
+                "is_approved": r.is_approved,
+                "created_at": r.created_at,
+            }
+            for r in reviews
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Comprehensive vendor profile
+# ---------------------------------------------------------------------------
+
+@router.get("/profile")
+def get_vendor_profile(
+    vendor: User = Depends(get_current_vendor),
+    db: Session = Depends(get_db),
+):
+    """Full vendor profile: account details, KYC status, subscription, salon summary."""
+    from sqlalchemy import func
+
+    kyc = db.query(VendorKYC).filter(VendorKYC.vendor_id == vendor.id).first()
+    salon_count = db.query(Salon).filter(Salon.owner_id == vendor.id).count()
+    salon_ids = [s.id for s in db.query(Salon.id).filter(Salon.owner_id == vendor.id).all()]
+
+    total_bookings = db.query(Booking).filter(Booking.salon_id.in_(salon_ids)).count() if salon_ids else 0
+    total_revenue = (
+        db.query(func.sum(Booking.total_amount))
+        .filter(Booking.salon_id.in_(salon_ids), Booking.status == BookingStatus.COMPLETED)
+        .scalar() or 0
+    ) if salon_ids else 0
+
+    return {
+        "id": vendor.id,
+        "email": vendor.email,
+        "phone_number": vendor.phone_number,
+        "first_name": vendor.first_name,
+        "last_name": vendor.last_name,
+        "is_active": vendor.is_active,
+        "is_verified": vendor.is_verified,
+        "kyc_verified": vendor.kyc_verified,
+        "subscription": MetaMapService.get_subscription_status(vendor),
+        "kyc": {
+            "status": kyc.status if kyc else "not_started",
+            "method": "metamap" if (kyc and kyc.metamap_verification_id) else "manual" if kyc else None,
+            "rejection_reason": kyc.rejection_reason if kyc else None,
+        },
+        "stats": {
+            "total_salons": salon_count,
+            "total_bookings": total_bookings,
+            "total_revenue_ghs": float(total_revenue),
+        },
+        "created_at": vendor.created_at,
     }
