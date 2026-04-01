@@ -32,10 +32,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False) # Email verification
     
-    # KYC & Subscription (New Fields)
-    kyc_verified = Column(Boolean, default=False) # Identity verification
-    subscription_plan = Column(String(50), default="free") # free, premium, etc.
-    subscription_expires_at = Column(DateTime, nullable=True) # For the 30-day trial
+    # KYC & Subscription
+    kyc_verified = Column(Boolean, default=False)
+    subscription_plan = Column(String(50), default="free")   # free, premium_trial, premium
+    subscription_expires_at = Column(DateTime, nullable=True)
+    trial_start_date = Column(DateTime, nullable=True)
+    # SHA-256 hash of Ghana card number — enforces one card per account across the platform
+    ghana_card_hash = Column(String(64), unique=True, index=True, nullable=True)
     
     # OAuth fields
     google_id = Column(String(255), unique=True, index=True)
