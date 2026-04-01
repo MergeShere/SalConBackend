@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salon Connect — API Test Console</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;min-height:100vh}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:#1a1d27}
+  ::-webkit-scrollbar-thumb{background:#3d4155;border-radius:3px}
+
+  /* SIDEBAR */
+  #sidebar{width:270px;min-width:270px;background:#141720;border-right:1px solid #252836;height:100vh;overflow-y:auto;position:sticky;top:0;display:flex;flex-direction:column}
+  #sidebar header{padding:20px 16px 12px;border-bottom:1px solid #252836}
+  #sidebar header h1{font-size:14px;font-weight:700;color:#fff;letter-spacing:.5px}
+  #sidebar header p{font-size:11px;color:#7c85a2;margin-top:2px}
+  .nav-section{padding:8px 0}
+  .nav-section-label{padding:8px 16px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#4a5470}
+  .nav-item{display:flex;align-items:center;gap:8px;padding:7px 16px;cursor:pointer;font-size:12px;color:#8892ab;transition:all .15s;border-left:2px solid transparent;text-decoration:none}
+  .nav-item:hover{color:#e2e8f0;background:#1e2232;border-left-color:#3d4155}
+  .nav-item.active{color:#fff;background:#1e2232;border-left-color:#6c63ff}
+  .nav-item .badge{margin-left:auto;font-size:9px;padding:1px 6px;border-radius:8px;font-weight:600}
+  .badge.get{background:#0d3321;color:#34d399}
+  .badge.post{background:#0d2240;color:#60a5fa}
+  .badge.put{background:#2d1a00;color:#fb923c}
+  .badge.del{background:#2d0d0d;color:#f87171}
+  .badge.patch{background:#200d30;color:#c084fc}
+
+  /* MAIN */
+  #main{flex:1;overflow-y:auto;background:#0f1117}
+  #topbar{background:#141720;border-bottom:1px solid #252836;padding:12px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+  #topbar label{font-size:12px;color:#7c85a2;white-space:nowrap}
+  #base-url{flex:1;background:#0f1117;border:1px solid #252836;border-radius:6px;padding:7px 12px;color:#e2e8f0;font-size:13px;outline:none}
+  #base-url:focus{border-color:#6c63ff}
+  #token-input{flex:2;background:#0f1117;border:1px solid #252836;border-radius:6px;padding:7px 12px;color:#e2e8f0;font-size:12px;font-family:monospace;outline:none}
+  #token-input:focus{border-color:#6c63ff}
+  #token-input::placeholder{color:#3d4155}
+
+  #content{padding:24px}
+  .section-header{font-size:18px;font-weight:700;color:#fff;margin-bottom:4px;padding-top:8px}
+  .section-desc{font-size:12px;color:#7c85a2;margin-bottom:20px}
+
+  /* ENDPOINT CARD */
+  .endpoint{background:#141720;border:1px solid #252836;border-radius:10px;margin-bottom:12px;overflow:hidden;transition:border-color .2s}
+  .endpoint:hover{border-color:#3d4155}
+  .endpoint-header{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none}
+  .method-badge{padding:3px 10px;border-radius:5px;font-size:11px;font-weight:700;letter-spacing:.5px;min-width:54px;text-align:center}
+  .method-badge.GET{background:#0d3321;color:#34d399}
+  .method-badge.POST{background:#0d2240;color:#60a5fa}
+  .method-badge.PUT{background:#2d1a00;color:#fb923c}
+  .method-badge.DELETE{background:#2d0d0d;color:#f87171}
+  .method-badge.PATCH{background:#200d30;color:#c084fc}
+  .endpoint-path{font-family:monospace;font-size:13px;color:#e2e8f0;flex:1}
+  .endpoint-desc{font-size:11px;color:#5a6380;flex:2;text-align:right}
+  .auth-tag{font-size:10px;padding:2px 7px;border-radius:4px;background:#1e1a00;color:#fbbf24;font-weight:600}
+
+  /* ENDPOINT BODY */
+  .endpoint-body{display:none;padding:16px;border-top:1px solid #1e2232}
+  .endpoint-body.open{display:block}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .form-grid.single{grid-template-columns:1fr}
+  .field-group{display:flex;flex-direction:column;gap:4px}
+  .field-group label{font-size:11px;color:#7c85a2;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+  .field-group input,.field-group textarea,.field-group select{background:#0f1117;border:1px solid #252836;border-radius:6px;padding:8px 10px;color:#e2e8f0;font-size:13px;outline:none;transition:border-color .15s;font-family:inherit}
+  .field-group input:focus,.field-group textarea:focus,.field-group select:focus{border-color:#6c63ff}
+  .field-group textarea{min-height:80px;resize:vertical;font-family:monospace;font-size:12px}
+  .field-group select option{background:#141720}
+  .send-btn{background:#6c63ff;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+  .send-btn:hover{background:#7c73ff}
+  .send-btn:active{background:#5b52ef}
+
+  /* RESPONSE */
+  .response-area{margin-top:12px;display:none}
+  .response-area.visible{display:block}
+  .response-meta{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .status-code{font-size:13px;font-weight:700;padding:2px 10px;border-radius:5px}
+  .status-2xx{background:#0d3321;color:#34d399}
+  .status-4xx{background:#2d0d0d;color:#f87171}
+  .status-5xx{background:#2d0000;color:#ef4444}
+  .response-time{font-size:11px;color:#5a6380}
+  .response-json{background:#090b10;border:1px solid #1e2232;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto;color:#a9b8d4;line-height:1.5}
+
+  /* HELPERS */
+  .helper-text{font-size:11px;color:#5a6380;margin-bottom:10px;padding:8px 10px;background:#0f1117;border-radius:5px;border-left:3px solid #3d4155}
+  .divider{height:1px;background:#1e2232;margin:6px 0}
+  #no-selection{display:flex;flex-direction:column;align-items:center;justify-content:center;height:70vh;color:#3d4155}
+  #no-selection svg{width:60px;height:60px;margin-bottom:16px;opacity:.3}
+  #no-selection p{font-size:14px}
+  .section-scroll-target{padding-top:4px}
+
+  /* TOKEN QUICK-FILL */
+  .token-quick{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+  .tq-btn{font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #252836;background:#141720;color:#8892ab;cursor:pointer;transition:all .15s}
+  .tq-btn:hover{background:#1e2232;color:#e2e8f0;border-color:#3d4155}
+
+  .copied{position:fixed;bottom:20px;right:20px;background:#34d399;color:#0a1f14;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .3s;z-index:999}
+  .copied.show{opacity:1}
+
+  @media(max-width:768px){
+    #sidebar{display:none}
+    .form-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <header>
+    <h1>Salon Connect</h1>
+    <p>API Test Console</p>
+  </header>
+  <div id="nav-links"></div>
+</nav>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="topbar">
+    <label>Base URL</label>
+    <input id="base-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+    <label>Bearer Token</label>
+    <input id="token-input" placeholder="Paste JWT access_token here...">
+  </div>
+  <div id="content">
+    <div id="endpoint-sections"></div>
+  </div>
+</div>
+
+<div class="copied" id="toast">Copied!</div>
+
+<script>
+const API = () => document.getElementById('base-url').value.replace(/\/$/, '');
+const TOKEN = () => document.getElementById('token-input').value.trim();
+
+// ============================================================
+// ENDPOINT DEFINITIONS
+// ============================================================
+const SECTIONS = [
+{
+  id:'auth', label:'Authentication', desc:'Register, login, password reset, OTP, token management',
+  endpoints:[
+    {m:'POST',p:'/api/users/login',d:'Login with email + password',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:'opokuskimmer@gmail.com'},
+      {k:'password',l:'Password',t:'password',ph:'your password'},
+    ]},
+    {m:'POST',p:'/api/users/register',d:'Register (email verification flow)',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+      {k:'phone_number',l:'Phone',t:'text',ph:'+233...'},
+      {k:'first_name',l:'First Name',t:'text',ph:''},
+      {k:'last_name',l:'Last Name',t:'text',ph:''},
+      {k:'password',l:'Password',t:'password',ph:''},
+      {k:'role',l:'Role',t:'select',opts:['customer','vendor','admin']},
+    ]},
+    {m:'POST',p:'/api/users/register/customer',d:'Register customer (legacy)',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+      {k:'phone_number',l:'Phone',t:'text',ph:'+233...'},
+      {k:'first_name',l:'First Name',t:'text',ph:''},
+      {k:'last_name',l:'Last Name',t:'text',ph:''},
+      {k:'password',l:'Password',t:'password',ph:''},
+    ]},
+    {m:'POST',p:'/api/users/register/vendor',d:'Register vendor (legacy)',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+      {k:'phone_number',l:'Phone',t:'text',ph:'+233...'},
+      {k:'first_name',l:'First Name',t:'text',ph:''},
+      {k:'last_name',l:'Last Name',t:'text',ph:''},
+      {k:'password',l:'Password',t:'password',ph:''},
+      {k:'business_name',l:'Business Name',t:'text',ph:''},
+      {k:'business_phone',l:'Business Phone',t:'text',ph:'+233...'},
+      {k:'business_address',l:'Business Address',t:'text',ph:''},
+      {k:'business_city',l:'City',t:'text',ph:'Accra'},
+      {k:'business_state',l:'State',t:'text',ph:'Greater Accra'},
+      {k:'business_country',l:'Country',t:'text',ph:'Ghana'},
+    ]},
+    {m:'GET',p:'/api/users/verify-email',d:'Verify email by token',auth:false,query:[{k:'token',l:'Token',ph:'jwt-token-here'}]},
+    {m:'POST',p:'/api/users/resend-verification',d:'Resend verification email',auth:false,query:[{k:'email',l:'Email',ph:'user@example.com'}]},
+    {m:'POST',p:'/api/users/forgot-password',d:'Request password reset',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+    ]},
+    {m:'POST',p:'/api/users/login/otp/request',d:'Request OTP login',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+    ]},
+    {m:'POST',p:'/api/users/login/otp/verify',d:'Verify OTP and login',auth:false,fields:[
+      {k:'email',l:'Email',t:'email',ph:''},
+      {k:'otp',l:'OTP',t:'text',ph:'123456'},
+    ]},
+    {m:'POST',p:'/api/users/change-password',d:'Change password',auth:true,fields:[
+      {k:'current_password',l:'Current Password',t:'password',ph:''},
+      {k:'new_password',l:'New Password',t:'password',ph:''},
+    ]},
+    {m:'POST',p:'/api/users/token/refresh',d:'Refresh access token',auth:false,fields:[
+      {k:'refresh_token',l:'Refresh Token',t:'text',ph:'paste refresh_token'},
+    ]},
+    {m:'GET',p:'/api/users/token/verify',d:'Verify token validity',auth:true,fields:[]},
+    {m:'POST',p:'/api/users/logout',d:'Logout',auth:true,fields:[]},
+    {m:'GET',p:'/api/users/debug-env',d:'Debug environment variables',auth:false,fields:[]},
+    {m:'GET',p:'/api/users/debug-email',d:'Debug email config',auth:false,fields:[]},
+  ]
+},
+{
+  id:'users', label:'Users', desc:'Profile management and dashboards',
+  endpoints:[
+    {m:'GET',p:'/api/users/me',d:'Get current user',auth:true,fields:[]},
+    {m:'GET',p:'/api/users/me/profile',d:'Get user profile',auth:true,fields:[]},
+    {m:'PUT',p:'/api/users/me/profile',d:'Update profile',auth:true,fields:[
+      {k:'bio',l:'Bio',t:'textarea',ph:'About me...'},
+      {k:'city',l:'City',t:'text',ph:'Accra'},
+      {k:'country',l:'Country',t:'text',ph:'Ghana'},
+      {k:'gender',l:'Gender',t:'select',opts:['male','female','other','']},
+      {k:'address',l:'Address',t:'text',ph:''},
+    ]},
+    {m:'GET',p:'/api/users/me/role',d:'Get user role',auth:true,fields:[]},
+    {m:'GET',p:'/api/users/customer/dashboard',d:'Customer dashboard',auth:true,fields:[]},
+    {m:'GET',p:'/api/users/vendor/dashboard',d:'Vendor dashboard',auth:true,fields:[]},
+    {m:'DELETE',p:'/api/users/me/profile/remove-picture',d:'Remove profile picture',auth:true,fields:[]},
+  ]
+},
+{
+  id:'salons', label:'Salons', desc:'Salon discovery, management, services, reviews, images',
+  endpoints:[
+    {m:'GET',p:'/api/salons/',d:'Get all salons',auth:false,query:[
+      {k:'city',l:'City (optional)',ph:'Accra'},
+      {k:'skip',l:'Skip',ph:'0'},
+      {k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'POST',p:'/api/salons/',d:'Create salon (vendor)',auth:true,fields:[
+      {k:'name',l:'Salon Name',t:'text',ph:''},
+      {k:'address',l:'Address',t:'text',ph:''},
+      {k:'city',l:'City',t:'text',ph:'Accra'},
+      {k:'state',l:'State',t:'text',ph:'Greater Accra'},
+      {k:'country',l:'Country',t:'text',ph:'Ghana'},
+      {k:'postal_code',l:'Postal Code',t:'text',ph:''},
+      {k:'phone_number',l:'Phone',t:'text',ph:'+233...'},
+      {k:'email',l:'Email',t:'email',ph:''},
+      {k:'description',l:'Description',t:'textarea',ph:''},
+      {k:'opening_hours',l:'Opening Hours',t:'text',ph:'Mon-Sat 8am-6pm'},
+    ]},
+    {m:'GET',p:'/api/salons/{salon_id}',d:'Get salon details',auth:false,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}]},
+    {m:'PUT',p:'/api/salons/{salon_id}',d:'Update salon (owner)',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],fields:[
+      {k:'name',l:'Name',t:'text',ph:''},
+      {k:'description',l:'Description',t:'textarea',ph:''},
+      {k:'opening_hours',l:'Opening Hours',t:'text',ph:''},
+    ]},
+    {m:'DELETE',p:'/api/salons/{salon_id}',d:'Delete salon (owner)',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}]},
+    {m:'GET',p:'/api/salons/vendor/my-salons',d:'My salons (vendor)',auth:true,fields:[]},
+    {m:'POST',p:'/api/salons/{salon_id}/services',d:'Create service (owner)',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],fields:[
+      {k:'name',l:'Service Name',t:'text',ph:'Haircut'},
+      {k:'description',l:'Description',t:'text',ph:''},
+      {k:'duration',l:'Duration (min)',t:'number',ph:'30'},
+      {k:'price',l:'Price (GHS)',t:'number',ph:'50'},
+    ]},
+    {m:'PUT',p:'/api/salons/services/{service_id}',d:'Update service',auth:true,pathParams:[{k:'service_id',l:'Service ID',ph:'1'}],fields:[
+      {k:'name',l:'Name',t:'text',ph:''},
+      {k:'price',l:'Price',t:'number',ph:''},
+      {k:'duration',l:'Duration',t:'number',ph:''},
+    ]},
+    {m:'DELETE',p:'/api/salons/services/{service_id}',d:'Delete service',auth:true,pathParams:[{k:'service_id',l:'Service ID',ph:'1'}]},
+    {m:'POST',p:'/api/salons/{salon_id}/reviews',d:'Submit review (customer)',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],fields:[
+      {k:'rating',l:'Rating (1-5)',t:'number',ph:'5'},
+      {k:'comment',l:'Comment',t:'textarea',ph:'Great service!'},
+    ]},
+    {m:'GET',p:'/api/salons/{salon_id}/reviews',d:'Get salon reviews',auth:false,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],query:[
+      {k:'skip',l:'Skip',ph:'0'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+  ]
+},
+{
+  id:'bookings', label:'Bookings', desc:'Create and manage service bookings',
+  endpoints:[
+    {m:'GET',p:'/api/bookings/',d:'Get my bookings',auth:true,query:[
+      {k:'status',l:'Status (optional)',ph:'pending/confirmed/completed/cancelled'},
+      {k:'page',l:'Page',ph:'1'},
+      {k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'POST',p:'/api/bookings/',d:'Create booking (customer)',auth:true,jsonBody:true,fields:[
+      {k:'__json__',l:'Request Body (JSON)',t:'textarea',ph:'{\n  "salon_id": 1,\n  "booking_date": "2026-04-15T10:00:00",\n  "special_requests": "No allergies",\n  "items": [\n    {"service_id": 1, "quantity": 1}\n  ]\n}'},
+    ]},
+    {m:'GET',p:'/api/bookings/{booking_id}',d:'Get booking details',auth:true,pathParams:[{k:'booking_id',l:'Booking ID',ph:'1'}]},
+    {m:'PUT',p:'/api/bookings/{booking_id}',d:'Update booking',auth:true,pathParams:[{k:'booking_id',l:'Booking ID',ph:'1'}],fields:[
+      {k:'status',l:'Status',t:'select',opts:['pending','confirmed','completed','cancelled']},
+      {k:'cancellation_reason',l:'Cancellation Reason',t:'text',ph:''},
+    ]},
+    {m:'GET',p:'/api/bookings/vendor/bookings',d:'Vendor bookings',auth:true,query:[
+      {k:'status',l:'Status',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+  ]
+},
+{
+  id:'payments', label:'Payments', desc:'Paystack payment initiation, verification and webhooks',
+  endpoints:[
+    {m:'POST',p:'/api/payments/initiate',d:'Initiate payment',auth:true,fields:[
+      {k:'booking_id',l:'Booking ID',t:'number',ph:'1'},
+      {k:'callback_url',l:'Callback URL (optional)',t:'text',ph:'https://...'},
+    ]},
+    {m:'POST',p:'/api/payments/verify',d:'Verify payment',auth:true,fields:[
+      {k:'reference',l:'Payment Reference',t:'text',ph:'uuid-reference-here'},
+    ]},
+    {m:'GET',p:'/api/payments/{payment_id}',d:'Get payment by ID',auth:true,pathParams:[{k:'payment_id',l:'Payment ID',ph:'1'}]},
+    {m:'GET',p:'/api/payments/webhook/test-connection',d:'Test webhook connection',auth:false,fields:[]},
+    {m:'POST',p:'/api/payments/webhook/simulate-paystack',d:'Simulate Paystack webhook',auth:false,jsonBody:true,fields:[
+      {k:'__json__',l:'Payload (JSON)',t:'textarea',ph:'{\n  "event": "charge.success",\n  "data": {"reference": "test-ref", "status": "success"}\n}'},
+    ]},
+    {m:'GET',p:'/api/payments/webhook/create-test-payment',d:'Create test payment',auth:false,fields:[]},
+  ]
+},
+{
+  id:'vendor', label:'Vendor Dashboard', desc:'Vendor salon management, analytics, subscriptions',
+  endpoints:[
+    {m:'GET',p:'/api/vendor/profile',d:'Vendor full profile',auth:true,fields:[]},
+    {m:'GET',p:'/api/vendor/dashboard/overview',d:'Dashboard overview',auth:true,fields:[]},
+    {m:'GET',p:'/api/vendor/subscription/status',d:'Subscription / trial status',auth:true,fields:[]},
+    {m:'GET',p:'/api/vendor/salons',d:'My salons',auth:true,fields:[]},
+    {m:'POST',p:'/api/vendor/salons',d:'Create salon',auth:true,fields:[
+      {k:'name',l:'Name',t:'text',ph:''},
+      {k:'address',l:'Address',t:'text',ph:''},
+      {k:'city',l:'City',t:'text',ph:'Accra'},
+      {k:'state',l:'State',t:'text',ph:''},
+      {k:'country',l:'Country',t:'text',ph:'Ghana'},
+      {k:'postal_code',l:'Postal Code',t:'text',ph:''},
+      {k:'phone_number',l:'Phone',t:'text',ph:''},
+      {k:'email',l:'Email',t:'email',ph:''},
+    ]},
+    {m:'PUT',p:'/api/vendor/salons/{salon_id}',d:'Update salon',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],fields:[
+      {k:'name',l:'Name',t:'text',ph:''},{k:'description',l:'Description',t:'textarea',ph:''},
+    ]},
+    {m:'POST',p:'/api/vendor/salons/{salon_id}/services',d:'Create service',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],fields:[
+      {k:'name',l:'Service Name',t:'text',ph:''},
+      {k:'duration',l:'Duration (min)',t:'number',ph:'30'},
+      {k:'price',l:'Price (GHS)',t:'number',ph:'50'},
+    ]},
+    {m:'PUT',p:'/api/vendor/services/{service_id}',d:'Update service',auth:true,pathParams:[{k:'service_id',l:'Service ID',ph:'1'}],fields:[
+      {k:'name',l:'Name',t:'text',ph:''},{k:'price',l:'Price',t:'number',ph:''},
+    ]},
+    {m:'DELETE',p:'/api/vendor/services/{service_id}',d:'Delete service',auth:true,pathParams:[{k:'service_id',l:'Service ID',ph:'1'}]},
+    {m:'GET',p:'/api/vendor/bookings',d:'My bookings',auth:true,query:[
+      {k:'status',l:'Status',ph:''},{k:'salon_id',l:'Salon ID',ph:''},
+      {k:'start_date',l:'Start Date',ph:'2026-01-01'},{k:'end_date',l:'End Date',ph:'2026-12-31'},
+    ]},
+    {m:'GET',p:'/api/vendor/bookings/{booking_id}',d:'Booking details',auth:true,pathParams:[{k:'booking_id',l:'Booking ID',ph:'1'}]},
+    {m:'PUT',p:'/api/vendor/bookings/{booking_id}/status',d:'Update booking status',auth:true,pathParams:[{k:'booking_id',l:'Booking ID',ph:'1'}],query:[
+      {k:'status',l:'Status',ph:'confirmed/completed/cancelled'},
+    ]},
+    {m:'GET',p:'/api/vendor/bookings/stats',d:'Booking stats',auth:true,query:[{k:'period',l:'Period',ph:'today/week/month/year'}]},
+    {m:'GET',p:'/api/vendor/revenue/analytics',d:'Revenue analytics',auth:true,query:[{k:'period',l:'Period',ph:'week/month/year'}]},
+    {m:'GET',p:'/api/vendor/payments/history',d:'Payment history',auth:true,query:[
+      {k:'status',l:'Status',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'GET',p:'/api/vendor/analytics/customers',d:'Customer analytics',auth:true,fields:[]},
+    {m:'GET',p:'/api/vendor/analytics/services',d:'Service analytics',auth:true,fields:[]},
+    {m:'GET',p:'/api/vendor/reviews',d:'My reviews',auth:true,query:[
+      {k:'salon_id',l:'Salon ID (optional)',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+  ]
+},
+{
+  id:'kyc', label:'KYC / Identity', desc:'MetaMap verification, document upload, status',
+  endpoints:[
+    {m:'GET',p:'/api/kyc/status',d:'KYC + subscription status',auth:true,fields:[]},
+    {m:'POST',p:'/api/kyc/metamap/start',d:'Start MetaMap verification',auth:true,fields:[]},
+    {m:'POST',p:'/api/kyc/submit',d:'Submit KYC (legacy OCR path)',auth:true,jsonBody:true,fields:[
+      {k:'__json__',l:'Request Body (JSON)',t:'textarea',ph:'{\n  "id_type": "ghana_card",\n  "id_number": "GHA-000000000-0",\n  "full_name": "John Doe",\n  "date_of_birth": "1990-01-01",\n  "id_front_url": "https://...",\n  "selfie_url": "https://..."\n}'},
+    ]},
+    {m:'GET',p:'/api/kyc/portal',d:'KYC portal HTML',auth:false,fields:[]},
+  ]
+},
+{
+  id:'favorites', label:'Favorites', desc:'Save and remove favourite salons',
+  endpoints:[
+    {m:'GET',p:'/api/users/favorites',d:'Get my favourites',auth:true,fields:[]},
+    {m:'POST',p:'/api/users/favorites/{salon_id}',d:'Add to favourites',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}]},
+    {m:'DELETE',p:'/api/users/favorites/{salon_id}',d:'Remove from favourites',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}]},
+  ]
+},
+{
+  id:'oauth', label:'Google OAuth', desc:'Google sign-in and registration flow',
+  endpoints:[
+    {m:'GET',p:'/api/auth/google/login',d:'Start Google login',auth:false,fields:[]},
+    {m:'GET',p:'/api/auth/google/register',d:'Start Google registration',auth:false,fields:[]},
+    {m:'GET',p:'/api/auth/test-oauth',d:'Test OAuth config',auth:false,fields:[]},
+    {m:'GET',p:'/api/auth/debug-session',d:'Debug OAuth session',auth:false,fields:[]},
+  ]
+},
+{
+  id:'admin', label:'Admin', desc:'Platform management — users, KYC, salons, analytics',
+  endpoints:[
+    {m:'GET',p:'/api/admin/dashboard',d:'Platform dashboard',auth:true,fields:[]},
+    {m:'GET',p:'/api/admin/users',d:'List users',auth:true,query:[
+      {k:'role',l:'Role',ph:'customer/vendor/admin'},{k:'is_active',l:'Is Active',ph:'true/false'},
+      {k:'search',l:'Search',ph:'name or email'},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'GET',p:'/api/admin/users/{user_id}',d:'User details',auth:true,pathParams:[{k:'user_id',l:'User ID',ph:'1'}]},
+    {m:'PATCH',p:'/api/admin/users/{user_id}/status',d:'Toggle user status',auth:true,pathParams:[{k:'user_id',l:'User ID',ph:'1'}],query:[{k:'is_active',l:'is_active',ph:'true/false'}]},
+    {m:'DELETE',p:'/api/admin/users/{user_id}',d:'Delete user',auth:true,pathParams:[{k:'user_id',l:'User ID',ph:'1'}]},
+    {m:'GET',p:'/api/admin/vendors',d:'List vendors',auth:true,query:[
+      {k:'kyc_status',l:'KYC Status',ph:'pending/approved/rejected'},
+      {k:'subscription',l:'Subscription',ph:'free/premium_trial/premium'},
+      {k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'GET',p:'/api/admin/kyc/pending',d:'Pending KYC requests',auth:true,query:[{k:'method',l:'Method',ph:'metamap/manual'}]},
+    {m:'GET',p:'/api/admin/kyc/{kyc_id}',d:'KYC record details',auth:true,pathParams:[{k:'kyc_id',l:'KYC ID',ph:'1'}]},
+    {m:'PATCH',p:'/api/admin/kyc/{kyc_id}/review',d:'Approve / reject KYC',auth:true,pathParams:[{k:'kyc_id',l:'KYC ID',ph:'1'}],query:[
+      {k:'decision',l:'Decision',ph:'approve/reject'},
+      {k:'rejection_reason',l:'Rejection Reason (if rejecting)',ph:''},
+    ]},
+    {m:'GET',p:'/api/admin/salons',d:'List salons',auth:true,query:[
+      {k:'is_verified',l:'Is Verified',ph:'true/false'},{k:'city',l:'City',ph:''},
+      {k:'search',l:'Search',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'PATCH',p:'/api/admin/salons/{salon_id}/verify',d:'Verify salon',auth:true,pathParams:[{k:'salon_id',l:'Salon ID',ph:'1'}],query:[{k:'is_verified',l:'is_verified',ph:'true/false'}]},
+    {m:'GET',p:'/api/admin/bookings',d:'All bookings',auth:true,query:[
+      {k:'status',l:'Status',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'GET',p:'/api/admin/payments',d:'All payments',auth:true,query:[
+      {k:'status',l:'Status',ph:''},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'GET',p:'/api/admin/analytics/overview',d:'Platform analytics',auth:true,query:[{k:'period',l:'Period',ph:'week/month/year'}]},
+    {m:'GET',p:'/api/admin/analytics/revenue',d:'Revenue analytics',auth:true,fields:[]},
+    {m:'GET',p:'/api/admin/reports/users',d:'User report',auth:true,fields:[]},
+    {m:'GET',p:'/api/admin/reports/bookings',d:'Booking report',auth:true,fields:[]},
+    {m:'GET',p:'/api/admin/reports/subscriptions',d:'Subscription report',auth:true,fields:[]},
+    {m:'GET',p:'/api/admin/reviews',d:'All reviews',auth:true,query:[
+      {k:'is_approved',l:'Is Approved',ph:'true/false'},{k:'page',l:'Page',ph:'1'},{k:'limit',l:'Limit',ph:'20'},
+    ]},
+    {m:'PATCH',p:'/api/admin/reviews/{review_id}/moderate',d:'Moderate review',auth:true,pathParams:[{k:'review_id',l:'Review ID',ph:'1'}],query:[{k:'is_approved',l:'is_approved',ph:'true/false'}]},
+    {m:'POST',p:'/api/admin/subscriptions/grant',d:'Grant subscription',auth:true,query:[
+      {k:'vendor_id',l:'Vendor ID',ph:'1'},
+      {k:'plan',l:'Plan',ph:'premium_trial/premium/free'},
+      {k:'days',l:'Days',ph:'30'},
+    ]},
+  ]
+},
+{
+  id:'ai', label:'AI Automation', desc:'Gemini-powered recommendations, sentiment, pricing, forecast',
+  endpoints:[
+    {m:'GET',p:'/api/ai/recommendations/salons',d:'Salon recommendations',auth:true,query:[{k:'city',l:'City',ph:'Accra'}]},
+    {m:'POST',p:'/api/ai/reviews/sentiment',d:'Review sentiment analysis',auth:true,query:[{k:'review_text',l:'Review Text',ph:'The service was amazing!'}]},
+    {m:'GET',p:'/api/ai/pricing/suggest',d:'Pricing suggestion',auth:true,query:[
+      {k:'service_name',l:'Service Name',ph:'Haircut'},
+      {k:'duration_minutes',l:'Duration (min)',ph:'30'},
+      {k:'current_price_ghs',l:'Current Price (GHS)',ph:'50'},
+    ]},
+    {m:'GET',p:'/api/ai/bookings/{booking_id}/summary',d:'AI booking summary',auth:true,pathParams:[{k:'booking_id',l:'Booking ID',ph:'1'}]},
+    {m:'POST',p:'/api/ai/bookings/risk-check',d:'Booking fraud risk',auth:true,query:[{k:'booking_id',l:'Booking ID',ph:'1'}]},
+    {m:'GET',p:'/api/ai/customers/{customer_id}/churn-risk',d:'Customer churn risk',auth:true,pathParams:[{k:'customer_id',l:'Customer ID',ph:'1'}]},
+    {m:'GET',p:'/api/ai/forecast/demand',d:'Demand forecast (7 days)',auth:true,fields:[]},
+  ]
+},
+{
+  id:'health', label:'Health', desc:'Server status endpoints',
+  endpoints:[
+    {m:'GET',p:'/',d:'Root / welcome',auth:false,fields:[]},
+    {m:'GET',p:'/health',d:'Health check',auth:false,fields:[]},
+    {m:'GET',p:'/ping',d:'Ping',auth:false,fields:[]},
+    {m:'GET',p:'/docs',d:'Swagger UI (opens in new tab)',auth:false,fields:[],openTab:true},
+    {m:'GET',p:'/redoc',d:'ReDoc (opens in new tab)',auth:false,fields:[],openTab:true},
+  ]
+},
+];
+
+// ============================================================
+// BUILD UI
+// ============================================================
+let counter = 0;
+
+function buildNav(){
+  const nav = document.getElementById('nav-links');
+  SECTIONS.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'nav-section';
+    div.innerHTML = `<div class="nav-section-label">${s.label}</div>`;
+    s.endpoints.forEach(ep => {
+      const a = document.createElement('a');
+      a.className = 'nav-item';
+      a.href = '#ep-'+ep.__id;
+      a.innerHTML = `<span class="badge ${ep.m}">${ep.m}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${ep.p}</span>`;
+      div.appendChild(a);
+    });
+    nav.appendChild(div);
+  });
+}
+
+function buildSections(){
+  const cont = document.getElementById('endpoint-sections');
+  SECTIONS.forEach(s => {
+    const wrap = document.createElement('div');
+    wrap.className = 'section-scroll-target';
+    wrap.id = 'section-'+s.id;
+    wrap.innerHTML = `<div class="section-header">${s.label}</div><div class="section-desc">${s.desc}</div>`;
+    s.endpoints.forEach(ep => {
+      ep.__id = ++counter;
+      wrap.appendChild(buildEndpointCard(ep));
+    });
+    cont.appendChild(wrap);
+  });
+}
+
+function buildEndpointCard(ep){
+  const card = document.createElement('div');
+  card.className = 'endpoint';
+  card.id = 'ep-'+ep.__id;
+
+  const header = document.createElement('div');
+  header.className = 'endpoint-header';
+  header.innerHTML = `
+    <span class="method-badge ${ep.m}">${ep.m}</span>
+    <span class="endpoint-path">${ep.p}</span>
+    <span class="endpoint-desc">${ep.d}</span>
+    ${ep.auth ? '<span class="auth-tag">AUTH</span>' : ''}
+  `;
+
+  const body = document.createElement('div');
+  body.className = 'endpoint-body';
+  body.innerHTML = buildForm(ep);
+
+  header.addEventListener('click', () => {
+    body.classList.toggle('open');
+  });
+
+  card.appendChild(header);
+  card.appendChild(body);
+  return card;
+}
+
+function buildForm(ep){
+  let html = '';
+
+  if(ep.openTab){
+    return `<button class="send-btn" onclick="window.open(API()+'${ep.p}','_blank')">Open in browser</button>`;
+  }
+
+  // Path params
+  if(ep.pathParams && ep.pathParams.length){
+    html += `<div class="form-grid">`;
+    ep.pathParams.forEach(f => {
+      html += `<div class="field-group"><label>${f.l} <small style="color:#f87171">(path)</small></label>
+        <input id="pp-${ep.__id}-${f.k}" type="text" placeholder="${f.ph}" value="${f.ph}"></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Query params
+  if(ep.query && ep.query.length){
+    html += `<div class="helper-text">Query parameters (leave blank to omit)</div><div class="form-grid">`;
+    ep.query.forEach(f => {
+      html += `<div class="field-group"><label>${f.l}</label>
+        <input id="qp-${ep.__id}-${f.k}" type="text" placeholder="${f.ph}"></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Body fields
+  if(ep.fields && ep.fields.length){
+    html += `<div class="form-grid${ep.fields.length === 1 ? ' single' : ''}">`;
+    ep.fields.forEach(f => {
+      if(f.t === 'textarea'){
+        html += `<div class="field-group" style="grid-column:1/-1"><label>${f.l}</label>
+          <textarea id="f-${ep.__id}-${f.k}" placeholder="${f.ph}">${f.t==='textarea'&&f.k==='__json__'?f.ph:''}</textarea></div>`;
+      } else if(f.t === 'select'){
+        const opts = f.opts.map(o => `<option value="${o}">${o||'(none)'}</option>`).join('');
+        html += `<div class="field-group"><label>${f.l}</label><select id="f-${ep.__id}-${f.k}">${opts}</select></div>`;
+      } else {
+        html += `<div class="field-group"><label>${f.l}</label>
+          <input id="f-${ep.__id}-${f.k}" type="${f.t}" placeholder="${f.ph}"></div>`;
+      }
+    });
+    html += `</div>`;
+  }
+
+  html += `<button class="send-btn" onclick="sendRequest(${ep.__id})">Send Request</button>`;
+  html += `<div class="response-area" id="resp-${ep.__id}">
+    <div class="response-meta" id="meta-${ep.__id}"></div>
+    <pre class="response-json" id="json-${ep.__id}"></pre>
+    <button class="tq-btn" style="margin-top:6px" onclick="copyResp(${ep.__id})">Copy response</button>
+  </div>`;
+  return html;
+}
+
+// ============================================================
+// REQUEST LOGIC
+// ============================================================
+const EP_MAP = {};
+function buildMap(){ SECTIONS.forEach(s => s.endpoints.forEach(ep => EP_MAP[ep.__id] = ep)); }
+
+async function sendRequest(id){
+  const ep = EP_MAP[id];
+  if(!ep) return;
+
+  // Resolve path params
+  let path = ep.p;
+  if(ep.pathParams){
+    ep.pathParams.forEach(f => {
+      const val = document.getElementById(`pp-${id}-${f.k}`)?.value || f.ph;
+      path = path.replace(`{${f.k}}`, encodeURIComponent(val));
+    });
+  }
+
+  // Query params
+  const qp = new URLSearchParams();
+  if(ep.query){
+    ep.query.forEach(f => {
+      const val = document.getElementById(`qp-${id}-${f.k}`)?.value;
+      if(val) qp.set(f.k, val);
+    });
+  }
+  const qs = qp.toString();
+  const url = API() + path + (qs ? '?'+qs : '');
+
+  // Headers
+  const headers = {'Content-Type':'application/json'};
+  if(ep.auth && TOKEN()) headers['Authorization'] = 'Bearer '+TOKEN();
+
+  // Body
+  let body = undefined;
+  if(['POST','PUT','PATCH'].includes(ep.m) && ep.fields && ep.fields.length){
+    const jsonField = document.getElementById(`f-${id}-__json__`);
+    if(jsonField){
+      try{ body = jsonField.value; JSON.parse(body); }
+      catch(e){ showResp(id, 0, 0, {error:'Invalid JSON: '+e.message}); return; }
+    } else {
+      const obj = {};
+      ep.fields.forEach(f => {
+        const el = document.getElementById(`f-${id}-${f.k}`);
+        if(el && el.value !== '') obj[f.k] = f.t==='number' ? Number(el.value) : el.value;
+      });
+      body = JSON.stringify(obj);
+    }
+  }
+
+  const btn = document.querySelector(`#ep-${id} .send-btn`);
+  if(btn){ btn.textContent = 'Sending...'; btn.disabled = true; }
+
+  const t0 = Date.now();
+  try{
+    const opts = {method:ep.m, headers};
+    if(body) opts.body = body;
+    const res = await fetch(url, opts);
+    const ms = Date.now()-t0;
+    let data;
+    const ct = res.headers.get('content-type')||'';
+    if(ct.includes('json')) data = await res.json();
+    else data = await res.text();
+    showResp(id, res.status, ms, data);
+
+    // Auto-fill token if login succeeded
+    if(res.ok && (ep.p.includes('/login') || ep.p.includes('/otp/verify'))){
+      const token = data?.access_token;
+      if(token){ document.getElementById('token-input').value = token; showToast('Token auto-filled!'); }
+    }
+  } catch(e){
+    const ms = Date.now()-t0;
+    showResp(id, 0, ms, {error: String(e)});
+  } finally {
+    if(btn){ btn.textContent = 'Send Request'; btn.disabled = false; }
+  }
+}
+
+function showResp(id, status, ms, data){
+  const ra = document.getElementById(`resp-${id}`);
+  const meta = document.getElementById(`meta-${id}`);
+  const json = document.getElementById(`json-${id}`);
+  ra.classList.add('visible');
+
+  const cls = status >= 500 ? 'status-5xx' : status >= 400 ? 'status-4xx' : status > 0 ? 'status-2xx' : 'status-4xx';
+  const label = status > 0 ? status : 'ERR';
+  meta.innerHTML = `<span class="status-code ${cls}">${label}</span><span class="response-time">${ms}ms</span>`;
+
+  if(typeof data === 'object') json.textContent = JSON.stringify(data, null, 2);
+  else json.textContent = data;
+}
+
+function copyResp(id){
+  const text = document.getElementById(`json-${id}`)?.textContent;
+  if(text){ navigator.clipboard.writeText(text); showToast('Copied!'); }
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2000);
+}
+
+// Init
+buildNav();
+buildSections();
+buildMap();
+
+// Highlight nav on scroll
+const observer = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      document.querySelectorAll('.nav-item').forEach(a=>{
+        a.classList.remove('active');
+        if(a.getAttribute('href')==='#'+e.target.id) a.classList.add('active');
+      });
+    }
+  });
+},{threshold:0.1,rootMargin:'-60px 0px -80% 0px'});
+document.querySelectorAll('.endpoint').forEach(el=>observer.observe(el));
+</script>
+</body>
+</html>
