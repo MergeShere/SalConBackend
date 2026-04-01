@@ -5,8 +5,9 @@ from starlette.middleware.sessions import SessionMiddleware
 import os
 import asyncio
 import httpx
-# IMPORT THE NEW ROUTER
 from app.routes import auth, users, salons, bookings, payments, vendor, favorites, google_oauth, kyc
+from app.routes import admin as admin_router
+from app.routes import ai_routes
 from app.core.config import settings
 
 async def keep_alive():
@@ -72,8 +73,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
         "https://saloonconnect.vercel.app",
-        "http://127.0.0.1:3000"
+        settings.FRONTEND_URL.rstrip("/"),
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -89,8 +92,9 @@ app.include_router(bookings.router, prefix="/api/bookings", tags=["Bookings"])
 app.include_router(payments.router, prefix="/api/payments", tags=["Payments"])
 app.include_router(vendor.router, prefix="/api/vendor", tags=["Vendor Management"])
 app.include_router(favorites.router, prefix="/api/users", tags=["Favorites"])
-# ADD KYC ROUTER HERE
 app.include_router(kyc.router, prefix="/api/kyc", tags=["Identity Verification"])
+app.include_router(admin_router.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(ai_routes.router, prefix="/api/ai", tags=["AI Automation"])
 
 @app.get("/")
 async def root():
