@@ -1,6 +1,0 @@
-# Add these lines to your .gitignore file
-venv/
-.env
-*.pyc
-__pycache__/
-*.sqlite3
