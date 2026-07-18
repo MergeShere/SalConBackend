@@ -97,7 +97,6 @@ pytest-django
 python-dateutil
 python-decouple
 python-dotenv
-python-environ
 python-jose
 python-magic
 python-multipart

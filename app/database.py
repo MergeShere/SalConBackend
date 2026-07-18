@@ -27,7 +27,7 @@ if not database_url:
     print(" Development: Using SQLite")
     engine_args = {"connect_args": {"check_same_thread": False}}
 else:
-    print(" Production: Using PostgreSQL (AWS RDS)")
+    print(" Production: Using PostgreSQL")
 
 
 engine = create_engine(database_url, **engine_args)
