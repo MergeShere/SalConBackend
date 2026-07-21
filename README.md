@@ -113,7 +113,6 @@ AWS_SECRET_ACCESS_KEY=
 AWS_REGION=us-east-1
 ADMIN_EMAILS=admin@example.com
 ```
-
 Without `DATABASE_URL`, the app falls back to SQLite (`salon_connect.db`) for zero-config local dev.
 
 ---
