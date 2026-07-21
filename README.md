@@ -118,6 +118,8 @@ Without `DATABASE_URL`, the app falls back to SQLite (`salon_connect.db`) for ze
 
 ---
 
+
+
 ## API Overview
 
 Authentication header for protected endpoints:
