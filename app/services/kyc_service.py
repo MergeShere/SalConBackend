@@ -27,12 +27,8 @@ except ImportError:
     FACE_RECOGNITION_AVAILABLE = False
     face_recognition = None
 
-try:
-    from deepface import DeepFace
-    DEEPFACE_AVAILABLE = True
-except ImportError:
-    DEEPFACE_AVAILABLE = False
-    DeepFace = None
+import importlib.util
+DEEPFACE_AVAILABLE = importlib.util.find_spec("deepface") is not None
 
 logger = logging.getLogger(__name__)
 
@@ -262,8 +258,9 @@ class KYCService:
                 else:
                     methods_scores['face_recognition'] = 0
             
-            # Method 2: DeepFace (if available)
+            # Method 2: DeepFace (if available) — imported lazily, it pulls in TensorFlow
             if DEEPFACE_AVAILABLE:
+                from deepface import DeepFace
                 deepface_result = DeepFace.verify(
                     img1_path=id_photo_url,
                     img2_path=selfie_url,

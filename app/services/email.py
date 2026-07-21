@@ -7,21 +7,74 @@ from app.core.config import settings
 import os
 import re
 from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EmailService:
     @staticmethod
     def send_email(to_email: str, subject: str, html_content: str) -> bool:
+        """Send email via the configured provider (EMAIL_PROVIDER: resend | sendgrid)"""
+        if settings.EMAIL_PROVIDER == "resend":
+            return EmailService._send_via_resend(to_email, subject, html_content)
+        return EmailService._send_via_sendgrid(to_email, subject, html_content)
+
+    @staticmethod
+    def _send_via_resend(to_email: str, subject: str, html_content: str) -> bool:
+        """Send email using the Resend API"""
+        try:
+            logger.info(f"[RESEND] Starting email send to: {to_email}")
+
+            if not settings.RESEND_API_KEY:
+                logger.error("[RESEND] Missing RESEND_API_KEY")
+                return False
+
+            if not settings.EMAIL_FROM:
+                logger.error("[RESEND] Missing EMAIL_FROM")
+                return False
+
+            response = requests.post(
+                "https://api.resend.com/emails",
+                json={
+                    "from": settings.EMAIL_FROM,
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_content,
+                    "text": EmailService._extract_plain_text(html_content),
+                },
+                headers={
+                    "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+
+            if response.status_code in (200, 201):
+                logger.info(f"[RESEND] Email sent successfully! id={response.json().get('id')}")
+                return True
+
+            logger.error(f"[RESEND] Failed to send email. Status: {response.status_code} Body: {response.text}")
+            return False
+
+        except requests.exceptions.Timeout:
+            logger.warning("[RESEND] Request timeout")
+            return False
+        except Exception as e:
+            logger.error(f"[RESEND] Error sending email: {str(e)}")
+            return False
+
+    @staticmethod
+    def _send_via_sendgrid(to_email: str, subject: str, html_content: str) -> bool:
         """Send email using SendGrid API with comprehensive anti-spam measures"""
         try:
-            print(f"📧 [SENDGRID] Starting email send to: {to_email}")
-            
+            logger.info(f"[SENDGRID] Starting email send to: {to_email}")
             # Validate required configurations
             if not settings.SENDGRID_API_KEY:
-                print("❌ [SENDGRID] Missing SENDGRID_API_KEY")
+                logger.error("[SENDGRID] Missing SENDGRID_API_KEY")
                 return False
                 
             if not settings.FROM_EMAIL:
-                print("❌ [SENDGRID] Missing FROM_EMAIL")
+                logger.error("[SENDGRID] Missing FROM_EMAIL")
                 return False
 
             # Extract domain for headers
@@ -95,8 +148,7 @@ class EmailService:
                 }
             }
             
-            print(f"📧 [SENDGRID] Sending email via SendGrid API...")
-            
+            logger.info(f"[SENDGRID] Sending email via SendGrid API...")
             response = requests.post(
                 "https://api.sendgrid.com/v3/mail/send",
                 json=data,
@@ -105,22 +157,22 @@ class EmailService:
             )
             
             if response.status_code == 202:
-                print(f"✅ [SENDGRID] Email sent successfully! Status: {response.status_code}")
+                logger.info(f"[SENDGRID] Email sent successfully! Status: {response.status_code}")
                 return True
             else:
-                print(f"❌ [SENDGRID] Failed to send email. Status: {response.status_code}")
+                logger.error(f"[SENDGRID] Failed to send email. Status: {response.status_code}")
                 try:
                     error_response = response.json()
-                    print(f"❌ [SENDGRID] Error details: {error_response}")
+                    logger.error(f"[SENDGRID] Error details: {error_response}")
                 except:
-                    print(f"❌ [SENDGRID] Error text: {response.text}")
+                    logger.error(f"[SENDGRID] Error text: {response.text}")
                 return False
             
         except requests.exceptions.Timeout:
-            print(f"⚠️ [SENDGRID] Request timeout")
+            logger.warning(f"[SENDGRID] Request timeout")
             return False
         except Exception as e:
-            print(f"❌ [SENDGRID] Error sending email: {str(e)}")
+            logger.error(f"[SENDGRID] Error sending email: {str(e)}")
             return False
 
     @staticmethod
@@ -235,11 +287,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, email, subject)
-            print(f"📧 [SENDGRID] Sending verification email to: {email}")
+            logger.info(f"[SENDGRID] Sending verification email to: {email}")
             return EmailService.send_email(email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending verification email: {str(e)}")
+            logger.error(f"Error sending verification email: {str(e)}")
             return False
 
     @staticmethod
@@ -279,11 +331,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, email, subject)
-            print(f"📧 [SENDGRID] Sending password reset email to: {email}")
+            logger.info(f"[SENDGRID] Sending password reset email to: {email}")
             return EmailService.send_email(email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending password reset email: {str(e)}")
+            logger.error(f"Error sending password reset email: {str(e)}")
             return False
 
     @staticmethod
@@ -318,11 +370,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, email, subject)
-            print(f"📧 [SENDGRID] Sending OTP email to: {email}")
+            logger.info(f"[SENDGRID] Sending OTP email to: {email}")
             return EmailService.send_email(email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending OTP email: {str(e)}")
+            logger.error(f"Error sending OTP email: {str(e)}")
             return False
 
     @staticmethod
@@ -364,11 +416,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, customer_email, subject)
-            print(f"📧 [SENDGRID] Sending booking confirmation to: {customer_email}")
+            logger.info(f"[SENDGRID] Sending booking confirmation to: {customer_email}")
             return EmailService.send_email(customer_email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending booking confirmation: {str(e)}")
+            logger.error(f"Error sending booking confirmation: {str(e)}")
             return False
 
     @staticmethod
@@ -415,11 +467,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, vendor_email, subject)
-            print(f"📧 [SENDGRID] Sending booking notification to vendor: {vendor_email}")
+            logger.info(f"[SENDGRID] Sending booking notification to vendor: {vendor_email}")
             return EmailService.send_email(vendor_email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending vendor notification: {str(e)}")
+            logger.error(f"Error sending vendor notification: {str(e)}")
             return False
 
     @staticmethod
@@ -455,11 +507,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, email, subject)
-            print(f"📧 [SENDGRID] Sending payment confirmation to: {email}")
+            logger.info(f"[SENDGRID] Sending payment confirmation to: {email}")
             return EmailService.send_email(email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending payment confirmation: {str(e)}")
+            logger.error(f"Error sending payment confirmation: {str(e)}")
             return False
 
     @staticmethod
@@ -505,11 +557,11 @@ class EmailService:
             """
             
             html_content = EmailService._create_base_template(content, email, subject)
-            print(f"📧 [SENDGRID] Sending vendor welcome email to: {email}")
+            logger.info(f"[SENDGRID] Sending vendor welcome email to: {email}")
             return EmailService.send_email(email, subject, html_content)
             
         except Exception as e:
-            print(f"❌ Error sending vendor welcome email: {str(e)}")
+            logger.error(f"Error sending vendor welcome email: {str(e)}")
             return False
 
     # Token Generation and Verification Methods

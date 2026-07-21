@@ -1,9 +1,12 @@
 import os
+import logging
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 from typing import List
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     # App
@@ -24,6 +27,13 @@ class Settings(BaseSettings):
     PAYSTACK_SECRET_KEY: str = os.getenv("PAYSTACK_SECRET_KEY", "")
     PAYSTACK_PUBLIC_KEY: str = os.getenv("PAYSTACK_PUBLIC_KEY", "")
     PAYSTACK_BASE_URL: str = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
+
+    # Email provider selection: "resend" or "sendgrid" (default)
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "sendgrid").lower()
+
+    # Resend
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    EMAIL_FROM: str = os.getenv("EMAIL_FROM", "")
 
     # SendGrid
     SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
@@ -114,7 +124,8 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-print(f"Environment: {'PRODUCTION' if settings.IS_PRODUCTION else 'DEVELOPMENT'}")
-print(f"Backend URL: {settings.CURRENT_BASE_URL}")
-print(f"Google Redirect: {settings.GOOGLE_REDIRECT_URI}")
-print(f"Admin Emails: {settings.get_admin_emails_list()}")
+logger.info(
+    "Environment=%s BackendURL=%s",
+    "PRODUCTION" if settings.IS_PRODUCTION else "DEVELOPMENT",
+    settings.CURRENT_BASE_URL,
+)
