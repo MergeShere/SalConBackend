@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test OAuth</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .btn { 
+            background: #4285f4; 
+            color: white; 
+            padding: 15px 30px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            margin: 10px; 
+        }
+        .result { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border-radius: 5px; 
+            background: #f8f9fa; 
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Google OAuth</h1>
+    <button class="btn" onclick="startOAuth()">Login with Google</button>
+    
+    <div id="result" class="result" style="display: none;"></div>
+    
+    <script>
+        function startOAuth() {
+            window.open('http://localhost:8000/api/auth/google', 'oauth', 'width=600,height=600');
+        }
+        
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'oauth_success') {
+                const result = document.getElementById('result');
+                result.style.display = 'block';
+                result.innerHTML = `
+                    <h3>Login Successful!</h3>
+                    <p><strong>User:</strong> ${event.data.data.user.first_name} ${event.data.data.user.last_name}</p>
+                    <p><strong>Email:</strong> ${event.data.data.user.email}</p>
+                    <p><strong>Role:</strong> ${event.data.data.user.role}</p>
+                    <p><strong>Permissions:</strong> ${event.data.data.user.permissions.join(', ')}</p>
+                    <p><strong>Token:</strong> ${event.data.data.access_token.substring(0, 50)}...</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>

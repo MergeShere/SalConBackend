@@ -1,72 +1,56 @@
 # Salon Connect API
 
- This repository contains the backend API for a salon booking platform I built to connect customers with salons, manage bookings, and handle payments. Below I explain the project, how it works, and how you can run or contribute to it. 
+A FastAPI-based salon booking marketplace backend. Customers discover salons and book multi-service appointments, vendors manage their salon profile and analytics, and admins verify vendor identity via KYC with AI face matching.
+
 ---
 
-## Quick overview
+## Live Deployments
 
-Salon Connect is a complete backend system that provides:
-
-- User management with role-based access (Customer, Vendor, Admin).
-- Salon discovery (search, filters, featured & nearby listings).
-- Multi-service booking system with real-time availability checks.
-- Payment processing integrated with Paystack (initiate, verify, webhook handling).
-- Vendor dashboard features (revenue insights and booking analytics).
-- File uploads (images via Cloudinary) and email (SMTP) for password resets.
-- Auto-generated API docs via OpenAPI / Swagger.
-
-Live deployments I maintain:
 - Primary: https://salonconnect-qzne.onrender.com
 - Swagger UI: https://salonconnect-qzne.onrender.com/docs
 - Health check: https://salonconnect-qzne.onrender.com/health
 
 ---
 
-## What you get in this repo (conceptually)
+## Features
 
-Top-level project layout and responsibilities (so you know where to look):
-
-- app/main.py — application entrypoint, router mounting, startup/shutdown hooks
-- app/database.py — DB engine and session helpers
-- app/models/ — ORM model definitions (User, Salon, Service, Booking, Payment)
-- app/schemas/ — Pydantic schemas for request/response validation
-- app/routes/ — HTTP endpoints grouped by domain (auth, users, salons, bookings, payments, favorites)
-- app/services/ — Business logic: auth, booking management, payments, email helpers
-- app/core/ — app configuration, security helpers, Cloudinary utilities
-- app/utils/ — shared validators and helpers
-- requirements.txt — Python dependency list
-- .env — environment variables file example (not committed with secrets)
-
----
-
-## Key features (short)
-
-- JWT-based authentication with access and refresh tokens
-- Role-based access control (Customer, Vendor, Admin)
-- File uploads to Cloudinary for avatars and salon images
-- Paystack integration with webhook verification
-- Booking lifecycle management: Pending → Confirmed → Completed → Cancelled
-- Interactive API docs (Swagger / ReDoc)
+- **Auth** — JWT access + refresh tokens, Google OAuth, role-based access (Customer, Vendor, Admin)
+- **Salon discovery** — search with filters, featured listings, nearby by coordinates, reviews
+- **Multi-service bookings** — real-time availability, booking lifecycle (Pending → Confirmed → Completed → Cancelled)
+- **Payments** — Paystack integration: initiate, verify, webhook handling with signature verification
+- **KYC / Identity verification** — two paths:
+  - Legacy: document upload + OCR + DeepFace face matching
+  - MetaMap: hosted SDK widget with Ghana card dedup and 30-day trial
+- **Vendor dashboard** — revenue analytics, booking summaries, demand forecasting, customer churn risk
+- **Admin panel** — user/vendor/salon/booking/payment management, KYC review, content moderation
+- **AI automation** — Claude-powered salon recommendations, pricing suggestions, demand forecasts
+- **File uploads** — images via Cloudinary; email via SendGrid
 
 ---
 
-## Environment variables (what to provide)
+## Project Layout
 
-Create a `.env` in the repo root (or configure in your host platform). Important variables I use:
-
-- DEBUG: True/False — enable development features
-- SECRET_KEY: used for JWTs and security — keep private
-- DATABASE_URL: Postgres connection string (postgresql://user:pass@host:5432/dbname)
-- CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
-- EMAIL_HOST, EMAIL_PORT, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD, DEFAULT_FROM_EMAIL
-- PAYSTACK_SECRET_KEY, PAYSTACK_PUBLIC_KEY, PAYSTACK_BASE_URL (default: https://api.paystack.co)
-- ACCESS_TOKEN_EXPIRE_MINUTES
+```
+app/
+  main.py            # App factory, CORS/session middleware, router mounting
+  database.py        # SQLAlchemy engine + session; falls back to SQLite if no DATABASE_URL
+  core/
+    config.py        # Pydantic Settings loaded from .env
+    security.py      # JWT creation/verification, password hashing
+    cloudinary.py    # Image upload utilities
+    dependencies.py  # FastAPI DI: get_db, get_current_user, role checks
+  models/            # SQLAlchemy ORM models (user, salon, booking, payment, kyc, vendor)
+  schemas/           # Pydantic v2 request/response schemas
+  routes/            # HTTP routers (auth, users, salons, bookings, payments, vendor, kyc, admin, ai_routes, google_oauth, favorites)
+  services/          # Business logic (auth, booking, payment, salon, kyc, metamap, ai, email, paystack, google_oauth)
+  utils/             # Shared validators/helpers
+  templates/         # Jinja2 HTML (KYC portal)
+alembic/             # DB migrations
+```
 
 ---
 
-## Installation & setup (high-level steps)
-
-I keep exact commands short here — these are the steps I follow locally:
+## Installation & Setup
 
 1. Clone the repository:
 ```bash
@@ -74,197 +58,218 @@ git clone git@github.com:doanane/SalonConnect.git
 cd SalonConnect
 ```
 
-2. Create and activate a virtual environment (example):
+2. Create and activate a virtual environment:
 ```bash
 python -m venv venv
 # macOS / Linux
 source venv/bin/activate
-# Windows (PowerShell)
+# Windows
 venv\Scripts\Activate.ps1
 ```
 
 3. Install dependencies:
 ```bash
+# Development (includes ML/CV stack for DeepFace KYC)
 pip install -r requirements.txt
+
+# Production (no ML stack)
+pip install -r requirements-prod.txt
 ```
 
-4. Add your environment variables to `.env` (see the section above).
+4. Create a `.env` in the project root (see Environment Variables below).
 
-5. Start the app in development:
+5. Run database migrations:
 ```bash
+alembic upgrade head
+```
+
+6. Start the development server:
+```bash
+python run.py
+# or
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- The interactive API docs are at: salonconnect-qzne.onrender.com/docs
-- Health endpoint: salonconnect-qzne.onrender.com/health
+---
 
-Note: In production I recommend using a production ASGI server, managed Postgres, and Alembic migrations.
+## Environment Variables
+
+```env
+SECRET_KEY=
+DATABASE_URL=postgresql://...          # omit for SQLite fallback
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+PAYSTACK_SECRET_KEY=
+PAYSTACK_PUBLIC_KEY=
+SENDGRID_API_KEY=
+FROM_EMAIL=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+FRONTEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:8000
+AWS_ACCESS_KEY_ID=                     # used for KYC/S3
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=us-east-1
+ADMIN_EMAILS=admin@example.com
+```
+
+Without `DATABASE_URL`, the app falls back to SQLite (`salon_connect.db`) for zero-config local dev.
 
 ---
 
-## API overview (conceptual endpoints)
-
-I list the main groups and what they do — use the Swagger UI for exact request/response examples.
-
-Authentication
-- POST /api/users/register — register new user
-- POST /api/users/login — login and receive tokens
-- POST /api/users/forgot-password — request password reset link
-- POST /api/users/reset-password — reset using token
-- POST /api/users/change-password — change password (authenticated)
-- GET /api/users/token/verify — verify token
-- POST /api/users/logout — logout (invalidate tokens)
-
-User management
-- GET /api/users/me — get current user
-- GET /api/users/me/profile — get profile
-- PUT /api/users/me/profile — update profile (image uploads supported)
-- GET /api/users/me/role — get current role
-- GET /api/users/customer/dashboard — customer dashboard
-- GET /api/users/vendor/dashboard — vendor dashboard
-
-Salon discovery & management
-- GET /api/salons/ — browse salons with filters (city, rating, services)
-- GET /api/salons/featured — featured salons
-- GET /api/salons/nearby — nearby salons by coordinates
-- GET /api/salons/{salon_id} — salon details
-- POST /api/salons/ — create a salon (Vendor)
-- GET /api/salons/{salon_id}/services — list services
-- POST /api/salons/{salon_id}/services — add a service (Owner)
-- GET /api/salons/{salon_id}/reviews — list reviews
-- POST /api/salons/{salon_id}/reviews — create review (Customer)
-
-Booking management
-- POST /api/bookings/ — create booking (multi-service support)
-- GET /api/bookings/ — list user bookings
-- GET /api/bookings/{booking_id} — booking detail
-- PUT /api/bookings/{booking_id} — update booking
-- GET /api/bookings/vendor/bookings — vendor bookings list
-
-Payments & webhooks
-- POST /api/payments/initiate — start a payment flow (Paystack)
-- POST /api/payments/verify — verify a payment
-- GET /api/payments/{payment_id} — get payment details
-- POST /api/payments/webhook/paystack — Paystack webhook endpoint (verify signature)
-
-Favorites
-- GET /api/users/favorites — list favorites
-- POST /api/users/favorites/{salon_id} — add favorite
-- DELETE /api/users/favorites/{salon_id} — remove favorite
+## API Overview
 
 Authentication header for protected endpoints:
 ```
 Authorization: Bearer <access_token>
 ```
 
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user |
+| POST | `/api/auth/login` | Login and receive tokens |
+| POST | `/api/auth/refresh` | Refresh access token |
+| POST | `/api/auth/logout` | Logout |
+| POST | `/api/auth/forgot-password` | Request password reset |
+| POST | `/api/auth/reset-password` | Reset using token |
+| GET | `/api/auth/google` | Google OAuth login |
+
+### Users
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users/me` | Get current user |
+| PUT | `/api/users/me/profile` | Update profile |
+| GET | `/api/users/customer/dashboard` | Customer dashboard |
+
+### Salons
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/salons/` | Browse salons (filters: city, rating, services) |
+| GET | `/api/salons/featured` | Featured salons |
+| GET | `/api/salons/nearby` | Nearby salons by coordinates |
+| GET | `/api/salons/{salon_id}` | Salon detail |
+| POST | `/api/salons/{salon_id}/reviews` | Create review (Customer) |
+
+### Bookings
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/bookings/` | Create booking (multi-service) |
+| GET | `/api/bookings/` | List user bookings |
+| GET | `/api/bookings/{booking_id}` | Booking detail |
+| PUT | `/api/bookings/{booking_id}` | Update booking |
+
+### Payments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/payments/initiate` | Start Paystack payment |
+| POST | `/api/payments/verify` | Verify payment |
+| GET | `/api/payments/{payment_id}` | Payment detail |
+| POST | `/api/payments/webhook/paystack` | Paystack webhook |
+
+### Vendor
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/vendor/salons` | Create salon |
+| GET | `/api/vendor/salons` | List own salons |
+| PUT | `/api/vendor/salons/{id}` | Update salon |
+| GET | `/api/vendor/dashboard` | Revenue & booking analytics |
+
+### KYC
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/kyc/status` | Current KYC status |
+| POST | `/api/kyc/upload` | Upload documents (legacy) |
+| GET | `/api/kyc/portal` | Legacy KYC portal (HTML) |
+| POST | `/api/kyc/metamap/initiate` | Start MetaMap verification |
+| POST | `/api/kyc/metamap/webhook` | MetaMap webhook |
+
+### Admin
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/dashboard` | Platform overview |
+| GET | `/api/admin/users` | User management |
+| GET | `/api/admin/vendors` | Vendor management + KYC review |
+| POST | `/api/admin/kyc/{id}/approve` | Approve vendor KYC |
+| POST | `/api/admin/kyc/{id}/reject` | Reject vendor KYC |
+| GET | `/api/admin/salons` | Salon management |
+| GET | `/api/admin/bookings` | Booking management |
+| GET | `/api/admin/payments` | Payment management |
+| GET | `/api/admin/reports` | Platform analytics |
+| DELETE | `/api/admin/reviews/{id}` | Remove review (moderation) |
+
+### AI Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/ai/recommendations/salons` | AI salon recommendations (Customer) |
+| GET | `/api/ai/pricing/suggestions` | Pricing suggestions (Vendor) |
+| GET | `/api/ai/bookings/summary` | Booking summary (Vendor) |
+| GET | `/api/ai/demand/forecast` | Demand forecast (Vendor) |
+| GET | `/api/ai/customers/churn-risk` | Customer churn risk |
+
+### Favorites
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users/favorites` | List favorites |
+| POST | `/api/users/favorites/{salon_id}` | Add favorite |
+| DELETE | `/api/users/favorites/{salon_id}` | Remove favorite |
+
 ---
 
-## Example quick curl flows
+## Quick curl Examples
 
 Register a user:
 ```bash
-curl -X POST "salonconnect-qzne.onrender.com/api/users/register" \
+curl -X POST "https://salonconnect-qzne.onrender.com/api/auth/register" \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "password123",
-    "first_name": "John",
-    "last_name": "Doe",
-    "role": "customer"
-  }'
+  -d '{"email": "user@example.com", "password": "password123", "first_name": "John", "last_name": "Doe", "role": "customer"}'
 ```
 
 Login:
 ```bash
-curl -X POST "salonconnect-qzne.onrender.com/api/users/login" \
+curl -X POST "https://salonconnect-qzne.onrender.com/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "password123"
-  }'
+  -d '{"email": "user@example.com", "password": "password123"}'
 ```
 
 Browse salons:
 ```bash
-curl -X GET "salonconnect-qzne.onrender.com/api/salons/?city=Lagos&min_rating=4.0"
+curl "https://salonconnect-qzne.onrender.com/api/salons/?city=Lagos&min_rating=4.0"
 ```
 
 ---
 
-## Database models (conceptual)
+## Database Models
 
-Primary entities I use:
-- User & UserProfile — core identity and profile details
-- PasswordReset — tokens for reset flow
-- Salon, Service, SalonImage, Review — salon catalog and metadata
-- Booking & BookingItem — booking master/detail records
-- Payment — transactions with gateway references
-
----
-
-## Testing & validation
-
-- The fastest way to explore endpoints is via the running Swagger UI.
-- For automated testing: add unit tests around service-layer logic and integration tests for booking and payment flows.
-- When testing payments, use Paystack test credentials and the Paystack dashboard to inspect requests.
+- **User & UserProfile** — identity, roles, authentication
+- **Salon, Service, SalonImage, Review** — salon catalog and metadata
+- **Booking & BookingItem** — master/detail booking records
+- **Payment** — Paystack transactions with webhook state
+- **VendorKYC & KYCAuditLog** — identity verification records and audit trail
 
 ---
 
-## Deployment notes
+## Deployment
 
-I typically deploy to Render.com. Basic steps I follow:
-1. Push code to GitHub.
-2. Connect the repo in Render.
-3. Set environment variables in Render dashboard.
-4. Use a managed Postgres instance and run migrations (Alembic recommended).
-5. Ensure webhook endpoints are HTTPS and accessible (Paystack requires HTTPS).
+Deployed on Render.com:
+1. Push to GitHub and connect the repo in Render.
+2. Set environment variables in the Render dashboard.
+3. Use managed Postgres and run `alembic upgrade head` on deploy.
+4. Production server: `gunicorn -c gunicorn.conf.py app.main:app`
 
----
-
-## Troubleshooting (common things I check)
-
-- Database connection: double-check DATABASE_URL and network access.
-- Authentication issues: verify SECRET_KEY and token expirations; ensure server clocks are synced.
-- Uploads failing: confirm Cloudinary credentials and allowed file sizes.
-- Payment errors: verify Paystack keys, webhook endpoints, and signature verification logic.
-
----
-
-## Security considerations I follow
-
-- Never commit secrets (SECRET_KEY, Paystack keys, DB passwords) to the repo.
-- Use HTTPS in production and secure headers.
-- Validate and sanitize inputs, especially the data sent to third parties.
-- Add rate limiting to sensitive endpoints (login, password reset) if needed.
-- Use idempotency and replay protection for webhooks and payment flows.
+`IS_PRODUCTION` is auto-detected from `RENDER=True` or `RENDER_EXTERNAL_URL` — controls HTTPS cookies and keep-alive behavior.
 
 ---
 
 ## Contributing
 
-I welcome contributions. If you want to help:
-- Work in the services layer for business logic, expose behavior via routes, and add Pydantic schemas for validation.
-- Write tests for new features and bug fixes.
-- Use Alembic migrations for schema changes (don't rely on auto-creation in production).
-- Open a pull request and describe the change — I will review.
+- Business logic goes in `services/`, exposed via thin route handlers in `routes/`, validated with Pydantic schemas in `schemas/`.
+- Use Alembic migrations for all schema changes.
+- Open a pull request with a clear description of the change.
 
 ---
 
-## Support / Contact
+## Contact
 
-If you need help or have enquiries about Salon Connect, email me at: anane365221@gmail.com
-
-For troubleshooting I recommend:
-- Checking the interactive docs at `/docs` on your running instance for exact payloads.
-- Reviewing server logs for stack traces and failing requests.
-- Using provider dashboards (Paystack, Cloudinary) to trace transactions/uploads.
-
----
-
-## License
-
-Add a LICENSE file with your preferred license (MIT, Apache-2.0, etc.) so others know how they can use and contribute.
-
----
-
-If you have any enquiries, contact me via: anane365221@gmail.com
+Email: anane365221@gmail.com

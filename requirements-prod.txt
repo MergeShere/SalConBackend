@@ -21,7 +21,6 @@ click-didyoumean
 click-plugins
 click-repl
 cloudinary
-cmake
 colorama
 cryptography
 distro
@@ -98,7 +97,6 @@ pytest-django
 python-dateutil
 python-decouple
 python-dotenv
-python-environ
 python-jose
 python-magic
 python-multipart
@@ -133,8 +131,3 @@ wcwidth
 Werkzeug
 wheel
 numpy
-opencv-python
-face-recognition
-deepface
-tensorflow
-tf-keras

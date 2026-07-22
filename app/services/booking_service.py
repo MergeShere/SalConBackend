@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, date
 
 from app.models.booking import Booking, BookingItem, BookingStatus
 from app.models.salon import Service, Salon
@@ -121,41 +122,34 @@ class BookingService:
             joinedload(Booking.items).joinedload(BookingItem.service)
         ).filter(Booking.customer_id == user_id)
         
-        if booking_status:  # CHANGED: Use booking_status instead of status
+        if booking_status: 
             query = query.filter(Booking.status == booking_status)
         
         offset = (page - 1) * limit
         return query.order_by(Booking.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
-    def get_vendor_bookings(db: Session, vendor_id: int, booking_status: Optional[str] = None, page: int = 1, limit: int = 10):
-        """Get bookings for vendor's salons"""
+    def get_vendor_bookings(db: Session, vendor_id: int, booking_status: Optional[str] = None, salon_id: Optional[int] = None, start_date: Optional[date] = None, end_date: Optional[date] = None):
+        """Get bookings for vendor's salons with filters"""
         query = db.query(Booking).options(
             joinedload(Booking.customer),
             joinedload(Booking.salon),
             joinedload(Booking.items).joinedload(BookingItem.service)
         ).join(Salon).filter(Salon.owner_id == vendor_id)
         
-        if booking_status:  # CHANGED: Use booking_status instead of status
+        if booking_status:
             query = query.filter(Booking.status == booking_status)
+            
+        if salon_id:
+            query = query.filter(Booking.salon_id == salon_id)
+            
+        if start_date:
+            query = query.filter(Booking.booking_date >= start_date)
+            
+        if end_date:
+            query = query.filter(Booking.booking_date <= end_date)
         
-        offset = (page - 1) * limit
-        return query.order_by(Booking.created_at.desc()).offset(offset).limit(limit).all()
-
-    @staticmethod
-    def get_vendor_bookings(db: Session, vendor_id: int, status: Optional[str] = None, page: int = 1, limit: int = 10):
-        """Get bookings for vendor's salons"""
-        query = db.query(Booking).options(
-            joinedload(Booking.customer),
-            joinedload(Booking.salon),
-            joinedload(Booking.items).joinedload(BookingItem.service)
-        ).join(Salon).filter(Salon.owner_id == vendor_id)
-        
-        if status:
-            query = query.filter(Booking.status == status)
-        
-        offset = (page - 1) * limit
-        return query.order_by(Booking.created_at.desc()).offset(offset).limit(limit).all()
+        return query.order_by(Booking.created_at.desc()).all()
 
     @staticmethod
     def update_booking(db: Session, booking_id: int, booking_data: BookingUpdate):

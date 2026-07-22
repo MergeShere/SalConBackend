@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendor Verification - Salon Connect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+    <style>
+        .camera-container { position: relative; width: 100%; max-width: 480px; margin: 0 auto; overflow: hidden; border-radius: 12px; background: #000; }
+        video { width: 100%; height: auto; display: block; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 50px solid rgba(0,0,0,0.5); box-sizing: border-box; pointer-events: none; }
+        .hidden { display: none; }
+        .scan-line { position: absolute; width: 100%; height: 2px; background: #4CAF50; top: 0; animation: scan 2s infinite linear; }
+        @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen">
+
+<div class="max-w-2xl mx-auto py-8 px-4">
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-gray-800">Identity Verification</h1>
+        <p class="text-gray-600 mt-2">Scan your ID to activate your 30-Day Free Trial</p>
+    </div>
+
+    <div class="flex justify-between items-center mb-8 px-8">
+        <div id="step1-dot" class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
+        <div class="flex-1 h-1 bg-gray-300 mx-2"></div>
+        <div id="step2-dot" class="w-8 h-8 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-bold">2</div>
+        <div class="flex-1 h-1 bg-gray-300 mx-2"></div>
+        <div id="step3-dot" class="w-8 h-8 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-bold">3</div>
+    </div>
+
+    <div id="step1" class="bg-white p-6 rounded-xl shadow-lg">
+        <h2 class="text-xl font-semibold mb-4">Scan Document</h2>
+        <div class="mb-4">
+            <label class="block text-gray-700 text-sm font-bold mb-2">Document Type</label>
+            <select id="docType" class="w-full border rounded px-3 py-2 bg-gray-50">
+                <option value="ghana_card">Ghana Card</option>
+                <option value="drivers_license">Driver's License</option>
+                <option value="voters_id">Voter's ID</option>
+                <option value="passport">Passport</option>
+            </select>
+        </div>
+
+        <div class="camera-container mb-4" id="cameraBox">
+            <video id="videoFeed" autoplay playsinline></video>
+            <div class="overlay"><div class="scan-line"></div></div>
+            <canvas id="canvas" class="hidden"></canvas>
+        </div>
+
+        <div class="flex gap-4" id="camControls">
+            <button onclick="startCamera('environment')" class="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700">Start Camera</button>
+            <button onclick="captureImage('front')" class="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 hidden" id="btnCapture">Capture Front</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mt-4 hidden" id="previews">
+            <div>
+                <p class="text-xs text-gray-500 mb-1">Front</p>
+                <img id="imgFront" class="w-full rounded border h-32 object-cover">
+            </div>
+            <div>
+                <p class="text-xs text-gray-500 mb-1">Back</p>
+                <img id="imgBack" class="w-full rounded border h-32 object-cover">
+                <button onclick="captureImage('back')" class="w-full mt-2 bg-gray-200 text-xs py-1 rounded">Capture Back</button>
+            </div>
+        </div>
+
+        <button onclick="nextStep(2)" id="btnNext1" class="w-full mt-6 bg-gray-400 text-white py-3 rounded-lg font-bold" disabled>Next Step</button>
+    </div>
+
+    <div id="step2" class="hidden bg-white p-6 rounded-xl shadow-lg">
+        <h2 class="text-xl font-semibold mb-4">Liveness Check</h2>
+        <p class="text-gray-600 mb-4 text-sm">Take a selfie to verify you match your ID.</p>
+        
+        <div class="camera-container mb-4">
+            <video id="selfieFeed" autoplay playsinline></video>
+            <div style="position:absolute; top:10%; left:25%; width:50%; height:80%; border:3px solid #4CAF50; border-radius:50%;"></div>
+        </div>
+
+        <button onclick="captureSelfie()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold mb-4">Take Selfie</button>
+        <img id="imgSelfie" class="hidden w-32 h-32 rounded-full mx-auto border-4 border-green-500 object-cover">
+        
+        <button onclick="nextStep(3)" id="btnNext2" class="w-full mt-4 bg-gray-400 text-white py-3 rounded-lg font-bold" disabled>Verify Data</button>
+    </div>
+
+    <div id="step3" class="hidden bg-white p-6 rounded-xl shadow-lg">
+        <h2 class="text-xl font-semibold mb-4">Confirm Details</h2>
+        <p class="text-sm text-gray-500 mb-4">We extracted the following data. Please correct if necessary.</p>
+
+        <form id="kycForm" class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-gray-600 uppercase">ID Number</label>
+                <input type="text" id="extractedId" class="w-full border-b-2 border-gray-300 focus:border-blue-600 outline-none py-2 bg-transparent" placeholder="GHA-...">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-600 uppercase">Full Name</label>
+                <input type="text" id="extractedName" class="w-full border-b-2 border-gray-300 focus:border-blue-600 outline-none py-2 bg-transparent">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-600 uppercase">Date of Birth</label>
+                <input type="date" id="extractedDob" class="w-full border-b-2 border-gray-300 focus:border-blue-600 outline-none py-2 bg-transparent">
+            </div>
+        </form>
+
+        <button onclick="submitFinal()" class="w-full mt-8 bg-green-600 text-white py-4 rounded-lg font-bold text-lg shadow-lg hover:bg-green-700 transition transform hover:-translate-y-1">
+            Submit & Start Trial
+        </button>
+    </div>
+</div>
+
+<script>
+    // Configuration
+    const API_BASE = 'http://localhost:8000/api/kyc'; // Update for production
+    const token = localStorage.getItem('access_token'); // Auth token
+    let stream = null;
+    let data = { front: null, back: null, selfie: null };
+
+    // --- Camera Functions ---
+    async function startCamera(mode) {
+        const video = mode === 'user' ? document.getElementById('selfieFeed') : document.getElementById('videoFeed');
+        const constraints = { video: { facingMode: mode } };
+        
+        try {
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+            if(mode !== 'user') document.getElementById('btnCapture').classList.remove('hidden');
+        } catch (err) {
+            alert("Camera access denied. Please allow camera permissions.");
+        }
+    }
+
+    function stopCamera() {
+        if (stream) stream.getTracks().forEach(track => track.stop());
+    }
+
+    // Capture & Upload
+    async function captureImage(type) {
+        const video = type === 'selfie' ? document.getElementById('selfieFeed') : document.getElementById('videoFeed');
+        const canvas = document.getElementById('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        
+        // Convert to file
+        canvas.toBlob(async (blob) => {
+            const file = new File([blob], `${type}.jpg`, { type: "image/jpeg" });
+            
+            // Upload immediately
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('doc_type', type === 'selfie' ? 'selfie' : 'front'); // Simplification for demo
+
+            try {
+                // Show loading indicator here if needed
+                const res = await axios.post(`${API_BASE}/upload-document`, formData, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                // Handle Success
+                if (type === 'front') {
+                    data.front = res.data.url;
+                    document.getElementById('imgFront').src = res.data.url;
+                    document.getElementById('previews').classList.remove('hidden');
+                    
+                    // Auto-fill Data (Mocked OCR)
+                    if(res.data.extracted_data) {
+                        document.getElementById('extractedId').value = res.data.extracted_data.id_number;
+                    }
+                    
+                    // Allow taking back photo (switch UI logic simplified here)
+                    document.getElementById('btnCapture').innerText = "Capture Back";
+                    document.getElementById('btnCapture').setAttribute('onclick', "captureImage('back')");
+                } 
+                else if (type === 'back') {
+                    data.back = res.data.url;
+                    document.getElementById('imgBack').src = res.data.url;
+                    stopCamera();
+                    document.getElementById('btnNext1').disabled = false;
+                    document.getElementById('btnNext1').classList.remove('bg-gray-400');
+                    document.getElementById('btnNext1').classList.add('bg-blue-600');
+                }
+                else if (type === 'selfie') {
+                    data.selfie = res.data.url;
+                    document.getElementById('imgSelfie').src = res.data.url;
+                    document.getElementById('imgSelfie').classList.remove('hidden');
+                    stopCamera();
+                    document.getElementById('btnNext2').disabled = false;
+                    document.getElementById('btnNext2').classList.remove('bg-gray-400');
+                    document.getElementById('btnNext2').classList.add('bg-blue-600');
+                }
+
+            } catch (err) {
+                alert("Upload failed. Try again.");
+            }
+        }, 'image/jpeg');
+    }
+
+    function captureSelfie() {
+        startCamera('user').then(() => {
+            // Wait a sec for camera to init
+            setTimeout(() => captureImage('selfie'), 1000); // Or use a separate button
+        });
+        // For this demo, clicking the button starts cam, user clicks again to capture
+        if(!stream) startCamera('user');
+        else captureImage('selfie');
+    }
+
+    // --- Navigation ---
+    function nextStep(step) {
+        document.querySelectorAll('[id^="step"]').forEach(el => el.classList.add('hidden'));
+        document.getElementById(`step${step}`).classList.remove('hidden');
+        
+        // Update dots
+        if(step === 2) {
+            document.getElementById('step2-dot').classList.add('bg-blue-600', 'text-white');
+            startCamera('user');
+        }
+        if(step === 3) {
+            document.getElementById('step3-dot').classList.add('bg-blue-600', 'text-white');
+        }
+    }
+
+    // --- Final Submission ---
+    async function submitFinal() {
+        const payload = {
+            id_type: document.getElementById('docType').value,
+            id_number: document.getElementById('extractedId').value,
+            full_name: document.getElementById('extractedName').value,
+            date_of_birth: document.getElementById('extractedDob').value,
+            id_front_url: data.front,
+            id_back_url: data.back || data.front, // Fallback for demo
+            selfie_url: data.selfie
+        };
+
+        try {
+            await axios.post(`${API_BASE}/submit`, payload, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            alert("Verification Complete! Check your email for your trial confirmation.");
+            window.location.href = '/vendor/dashboard';
+        } catch (err) {
+            alert(err.response?.data?.detail || "Submission failed");
+        }
+    }
+</script>
+</body>
+</html>

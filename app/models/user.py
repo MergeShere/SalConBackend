@@ -9,7 +9,6 @@ class UserRole(str, enum.Enum):
     VENDOR = "vendor"
     ADMIN = "admin"
 
-
 user_favorites = Table(
     'user_favorites',
     Base.metadata,
@@ -28,18 +27,42 @@ class User(Base):
     first_name = Column(String(100))
     last_name = Column(String(100))
     role = Column(Enum(UserRole), default=UserRole.CUSTOMER)
+    
+    # Status flags
     is_active = Column(Boolean, default=True)
-    is_verified = Column(Boolean, default=False)
+    is_verified = Column(Boolean, default=False) # Email verification
+    
+    # KYC & Subscription
+    kyc_verified = Column(Boolean, default=False)
+    subscription_plan = Column(String(50), default="free")   # free, premium_trial, premium
+    subscription_expires_at = Column(DateTime, nullable=True)
+    trial_start_date = Column(DateTime, nullable=True)
+    # SHA-256 hash of Ghana card number — enforces one card per account across the platform
+    ghana_card_hash = Column(String(64), unique=True, index=True, nullable=True)
+    
+    # OAuth fields
+    google_id = Column(String(255), unique=True, index=True)
+    is_oauth_user = Column(Boolean, default=False)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
-    
+    # Relationships
     profile = relationship("UserProfile", back_populates="user", uselist=False)
     salons = relationship("Salon", back_populates="owner")
     bookings = relationship("Booking", back_populates="customer")
     favorite_salons = relationship("Salon", secondary=user_favorites, backref="favorited_by_users")
     otps = relationship("UserOTP", back_populates="user")
     password_resets = relationship("PasswordReset", back_populates="user")
+    
+    # Add relationship to KYC data (disambiguate FK vs reviewer FK)
+    kyc_data = relationship(
+        "VendorKYC",
+        back_populates="vendor",
+        uselist=False,
+        foreign_keys="VendorKYC.vendor_id",
+        primaryjoin="User.id==VendorKYC.vendor_id",
+    )
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"

@@ -5,6 +5,8 @@
 *.log
 *.pot
 *.pyc
+.claude
+
 __pycache__/
 local_settings.py
 db.sqlite3
@@ -36,4 +38,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3                   
+*.sqlite3
+claude.md
+memory.md

@@ -17,7 +17,7 @@ router = APIRouter()
 security = HTTPBearer()
 
 # Include Google OAuth routes
-router.include_router(google_oauth.router, prefix="/api/users", tags=["Google OAuth"])
+# router.include_router(google_oauth.router, prefix="/api/users", tags=["Google OAuth"])
 
 
 

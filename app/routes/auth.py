@@ -3,28 +3,40 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 import os
 import jwt
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from app.services.google_oauth import GoogleOAuthService
-from app.database import get_db
-from app.schemas.user import UserCreate, UserResponse, Token, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest, OTPLoginRequest, OTPVerifyRequest
+
+from app.services.auth import AuthService
+from app.schemas.user import (
+    CustomerRegister, VendorRegister, UserCreate, UserResponse, 
+    Token, UserLogin, ForgotPasswordRequest, ResetPasswordRequest, 
+    ChangePasswordRequest, OTPLoginRequest, OTPVerifyRequest
+)
 from app.services.email import EmailService
 from app.core.security import verify_token, get_password_hash, create_access_token, verify_password
-from app.models.user import User, PasswordReset, PendingUser, UserOTP
+from app.database import get_db
 from app.core.config import settings
+from app.models.vendor import VendorBusinessInfo
+from app.models.salon import Salon
+from app.models.user import User, PasswordReset, PendingUser, UserOTP, UserRole
+import logging
 
 router = APIRouter()
-security = HTTPBearer()
 
+logger = logging.getLogger(__name__)
+security = HTTPBearer()
 templates = Jinja2Templates(directory="app/templates")
 
-# Get base URL from environment
-BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://salonconnect-qzne.onrender.com")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://saloonconnect.vercel.app")
+# Use settings from config instead of os.getenv for consistency
+BASE_URL = settings.CURRENT_BASE_URL
+FRONTEND_URL = settings.FRONTEND_URL
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)):
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security), 
+    db: Session = Depends(get_db)
+):
+    """Get current authenticated user"""
     token = credentials.credentials
     payload = verify_token(token)
     if not payload:
@@ -42,39 +54,54 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
     return user
 
+@router.post("/register/customer")
+def register_customer(customer_data: CustomerRegister, db: Session = Depends(get_db)):
+    """Register a new customer"""
+    return AuthService.register_customer(db, customer_data)
+
+@router.post("/register/vendor")
+def register_vendor(vendor_data: VendorRegister, db: Session = Depends(get_db)):
+    """Register a new vendor with business information"""
+    return AuthService.register_vendor(db, vendor_data)
+
 @router.post("/register")
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """Register a new user - sends verification email"""
     try:
-        print(f" [AUTH] Registration attempt for: {user_data.email}")
-        
-        # Check if email already exists
+        logger.info(f"[AUTH] Registration attempt for: {user_data.email}")
+        # Check if user already exists
         existing_user = db.query(User).filter(User.email == user_data.email).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
         
+        # Check if pending user exists
         existing_pending = db.query(PendingUser).filter(PendingUser.email == user_data.email).first()
         if existing_pending:
             # Resend verification email
             verification_url = f"{BASE_URL}/api/users/verify-email?token={existing_pending.verification_token}"
-            temp_user = User(
-                email=existing_pending.email,
-                first_name=existing_pending.first_name,
-                last_name=existing_pending.last_name
+            email_sent = EmailService.send_verification_email(
+                email=user_data.email,
+                first_name=user_data.first_name,
+                verification_url=verification_url
             )
-            email_sent = EmailService.send_verification_email(temp_user, verification_url)
-            raise HTTPException(status_code=400, detail="Verification email already sent. Please check your email.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Verification email already sent. Please check your email."
+            )
         
-        # Check phone number
+        # Check phone number if provided
         if user_data.phone_number:
             existing_phone = db.query(User).filter(User.phone_number == user_data.phone_number).first()
             if existing_phone:
                 raise HTTPException(status_code=400, detail="Phone number already registered")
 
+        # Hash password
         hashed_password = get_password_hash(user_data.password)
         
-        # Create pending user
+        # Generate verification token
         verification_token = EmailService.generate_verification_token(user_data.email)
+        
+        # Create pending user
         pending_user = PendingUser(
             email=user_data.email,
             phone_number=user_data.phone_number,
@@ -91,13 +118,12 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         db.refresh(pending_user)
         
         # Send verification email
-        temp_user = User(
+        verification_url = f"{BASE_URL}/api/users/verify-email?token={verification_token}"
+        email_sent = EmailService.send_verification_email(
             email=user_data.email,
             first_name=user_data.first_name,
-            last_name=user_data.last_name
+            verification_url=verification_url
         )
-        verification_url = f"{BASE_URL}/api/users/verify-email?token={verification_token}"
-        email_sent = EmailService.send_verification_email(temp_user, verification_url)
         
         return {
             "message": "Registration successful! Please check your email for verification link.",
@@ -105,13 +131,13 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             "debug_info": {
                 "verification_url": verification_url,
                 "email": user_data.email
-            } if os.getenv("DEBUG") == "True" else None
+            } if settings.DEBUG else None
         }
             
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Registration error: {str(e)}")
+        logger.error(f"[AUTH] Registration error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Registration failed. Please try again."
@@ -121,8 +147,8 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 def verify_email(request: Request, token: str = Query(...), db: Session = Depends(get_db)):
     """Verify user email and show success page"""
     try:
-        print(f" [AUTH] Email verification attempt with token: {token[:50]}...")
-        
+        logger.info(f"[AUTH] Email verification attempt with token: {token[:50]}...")
+        # Verify token
         payload = EmailService.verify_token(token, 'email_verification')
         if not payload:
             raise HTTPException(status_code=400, detail="Invalid or expired verification token")
@@ -136,7 +162,7 @@ def verify_email(request: Request, token: str = Query(...), db: Session = Depend
         if not pending_user:
             raise HTTPException(status_code=404, detail="Verification token not found or expired")
         
-        # Create actual user
+        # Create user
         user = User(
             email=pending_user.email,
             phone_number=pending_user.phone_number,
@@ -151,29 +177,51 @@ def verify_email(request: Request, token: str = Query(...), db: Session = Depend
         db.commit()
         db.refresh(user)
         
-        # Delete pending user
+        # If vendor, create initial salon
+        if user.role == UserRole.VENDOR:
+            business_info = db.query(VendorBusinessInfo).filter(
+                VendorBusinessInfo.email == user.email
+            ).first()
+            
+            if business_info:
+                initial_salon = Salon(
+                    owner_id=user.id,
+                    name=business_info.business_name,
+                    address=business_info.business_address,
+                    city=business_info.business_city,
+                    state=business_info.business_state,
+                    country=business_info.business_country,
+                    phone_number=business_info.business_phone,
+                    email=user.email,
+                    is_active=True
+                )
+                db.add(initial_salon)
+                db.commit()
+                logger.info(f"Created initial salon for vendor: {user.email}")
+        # Clean up pending user
         db.delete(pending_user)
         db.commit()
         
-        print(f" [AUTH] Email verified successfully for: {user.email}")
+        logger.info(f"[AUTH] Email verified successfully for: {user.email}")
         return templates.TemplateResponse("email_verified.html", {"request": request})
         
     except Exception as e:
-        print(f"[AUTH] Email verification error: {str(e)}")
+        logger.error(f"[AUTH] Email verification error: {str(e)}")
         return HTMLResponse(f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Verification Failed</title>
+            <title>Verification Failed - Salon Connect</title>
             <style>
                 body {{ font-family: Arial, sans-serif; text-align: center; padding: 50px; }}
-                .error {{ color: red; margin-bottom: 20px; }}
+                .error {{ color: #dc3545; font-size: 20px; margin-bottom: 20px; }}
+                .button {{ background: #667eea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px; }}
             </style>
         </head>
         <body>
-            <div class="error">Verification Failed</div>
+            <div class="error">⚠️ Verification Failed</div>
             <p>{str(e)}</p>
-            <p><a href="{FRONTEND_URL}/register">Try registering again</a></p>
+            <a href="{FRONTEND_URL}/register" class="button">Try Registering Again</a>
         </body>
         </html>
         """)
@@ -182,15 +230,15 @@ def verify_email(request: Request, token: str = Query(...), db: Session = Depend
 def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """Request password reset - sends email with reset link"""
     try:
-        print(f" [AUTH] Forgot password attempt for: {request.email}")
+        logger.info(f"[AUTH] Forgot password attempt for: {request.email}")
         user = db.query(User).filter(User.email == request.email).first()
         if not user:
-            print(f" [AUTH] User not found for email: {request.email}")
+            logger.info(f"[AUTH] User not found for email: {request.email}")
             return {"message": "If the email exists, a password reset link will be sent."}
         
         reset_token = EmailService.generate_reset_token(user.email)
         
-        # Create password reset record
+        # Save reset token
         password_reset = PasswordReset(
             user_id=user.id,
             token=reset_token,
@@ -201,29 +249,31 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
         
         reset_url = f"{BASE_URL}/api/users/reset-password-page?token={reset_token}"
         
-        # Send password reset email
-        email_sent = EmailService.send_password_reset_email(user, reset_url)
-        print(f"[AUTH] Password reset email sent status: {email_sent}")
-        
+        # Send email
+        email_sent = EmailService.send_password_reset_email(
+            email=user.email,
+            first_name=user.first_name,
+            reset_url=reset_url
+        )
+        logger.info(f"[AUTH] Password reset email sent status: {email_sent}")
         return {
             "message": "Password reset link sent to your email.",
             "email_sent": email_sent,
             "debug_info": {
                 "reset_url": reset_url,
                 "email": request.email
-            } if os.getenv("DEBUG") == "True" else None
+            } if settings.DEBUG else None
         }
             
     except Exception as e:
-        print(f"[AUTH] Forgot password error: {str(e)}")
+        logger.error(f"[AUTH] Forgot password error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/reset-password-page", response_class=HTMLResponse)
 def reset_password_page(request: Request, token: str = Query(...), db: Session = Depends(get_db)):
     """Serve the beautiful reset password page with token validation"""
     try:
-        print(f" [AUTH] Reset password page access with token: {token[:50]}...")
-        
+        logger.info(f"[AUTH] Reset password page access with token: {token[:50]}...")
         if token.startswith("b'") and token.endswith("'"):
             token = token[2:-1]
         
@@ -255,7 +305,7 @@ def reset_password_page(request: Request, token: str = Query(...), db: Session =
         })
         
     except Exception as e:
-        print(f"[AUTH] Reset password page error: {str(e)}")
+        logger.error(f"[AUTH] Reset password page error: {str(e)}")
         return templates.TemplateResponse("reset_password.html", {
             "request": request, 
             "error": "An error occurred. Please try again.",
@@ -272,8 +322,7 @@ def reset_password(
 ):
     """Reset password with token from form"""
     try:
-        print(f" [AUTH] Password reset attempt with token: {token[:50]}...")
-        
+        logger.info(f"[AUTH] Password reset attempt with token: {token[:50]}...")
         payload = EmailService.verify_reset_token(token)
         if not payload:
             return templates.TemplateResponse("reset_password.html", {
@@ -325,15 +374,13 @@ def reset_password(
         password_reset.used = True
         db.commit()
         
-        print(f" [AUTH] Password reset successful for user: {user.email}")
-        
-        # Return the success page
+        logger.info(f"[AUTH] Password reset successful for user: {user.email}")
         return templates.TemplateResponse("password_reset_success.html", {
             "request": request
         })
         
     except Exception as e:
-        print(f"[AUTH] Password reset error: {str(e)}")
+        logger.error(f"[AUTH] Password reset error: {str(e)}")
         return templates.TemplateResponse("reset_password.html", {
             "request": request, 
             "error": "An error occurred. Please try again.",
@@ -344,33 +391,60 @@ def reset_password(
 def resend_verification(email: str, db: Session = Depends(get_db)):
     """Resend email verification"""
     try:
-        print(f" [AUTH] Resend verification attempt for: {email}")
-        pending_user = db.query(PendingUser).filter(PendingUser.email == email).first()
-        if not pending_user:
-            return {"message": "If you have an account, a verification link has been sent to your email."}
-        
+        logger.info(f"[AUTH] Resend verification attempt for: {email}")
+        # First check if user already exists and is verified
         existing_user = db.query(User).filter(User.email == email, User.is_verified == True).first()
         if existing_user:
-            raise HTTPException(status_code=400, detail="Email already verified")
+            # Return proper 400 response
+            raise HTTPException(
+                status_code=400, 
+                detail="Email already verified. You can log in to your account."
+            )
         
-        temp_user = User(
-            email=pending_user.email,
-            first_name=pending_user.first_name,
-            last_name=pending_user.last_name
-        )
-        verification_url = f"{BASE_URL}/api/users/verify-email?token={pending_user.verification_token}"
+        # Check for pending user
+        pending_user = db.query(PendingUser).filter(PendingUser.email == email).first()
+        if not pending_user:
+            # For security, don't reveal if account exists
+            return {
+                "message": "If you have an account, a verification link has been sent to your email.",
+                "email_sent": False
+            }
+        
+        # Check if verification token is expired
+        if pending_user.expires_at < datetime.utcnow():
+            # Generate new token
+            new_token = EmailService.generate_verification_token(email)
+            pending_user.verification_token = new_token
+            pending_user.expires_at = datetime.utcnow() + timedelta(hours=24)
+            db.commit()
+            verification_url = f"{BASE_URL}/api/users/verify-email?token={new_token}"
+        else:
+            verification_url = f"{BASE_URL}/api/users/verify-email?token={pending_user.verification_token}"
         
         # Send verification email
-        email_sent = EmailService.send_verification_email(temp_user, verification_url)
-        print(f"[AUTH] Resend verification email sent status: {email_sent}")
+        email_sent = EmailService.send_verification_email(
+            email=email,
+            first_name=pending_user.first_name,
+            verification_url=verification_url
+        )
         
+        logger.info(f"[AUTH] Resend verification email sent status: {email_sent}")
         return {
             "message": "Verification email sent successfully",
             "email_sent": email_sent
         }
+        
+    except HTTPException:
+        # Re-raise HTTPException to maintain proper status code
+        raise
     except Exception as e:
-        print(f"[AUTH] Resend verification error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"[AUTH] Resend verification error: {str(e)}")
+        # Return error response without raising HTTPException
+        return {
+            "message": "Failed to resend verification email",
+            "error": str(e),
+            "email_sent": False
+        }
 
 @router.post("/login", response_model=Token)
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
@@ -397,7 +471,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[AUTH] Login error: {str(e)}")
+        logger.error(f"[AUTH] Login error: {str(e)}")
         raise HTTPException(status_code=401, detail="Login failed")
 
 @router.post("/login/otp/request")
@@ -406,7 +480,7 @@ def request_otp_login(request: OTPLoginRequest, db: Session = Depends(get_db)):
     try:
         user = db.query(User).filter(User.email == request.email).first()
         if not user:
-            # Don't reveal if user exists
+            # For security, don't reveal if user exists
             return {"message": "If the email exists, an OTP has been sent"}
         
         if not user.is_verified:
@@ -418,14 +492,14 @@ def request_otp_login(request: OTPLoginRequest, db: Session = Depends(get_db)):
         # Generate OTP
         otp = EmailService.generate_otp()
         
-        # Save OTP to database
+        # Create OTP record
         user_otp = UserOTP(
             user_id=user.id,
             otp=otp,
             expires_at=datetime.utcnow() + timedelta(minutes=10)
         )
         
-        # Deactivate previous OTPs
+        # Mark previous OTPs as used
         db.query(UserOTP).filter(
             UserOTP.user_id == user.id,
             UserOTP.used == False
@@ -435,14 +509,20 @@ def request_otp_login(request: OTPLoginRequest, db: Session = Depends(get_db)):
         db.commit()
         
         # Send OTP email
-        email_sent = EmailService.send_otp_email(user, otp)
+        email_sent = EmailService.send_otp_email(
+            email=user.email,
+            first_name=user.first_name,
+            otp=otp
+        )
         
         return {
             "message": "OTP sent to your email",
             "email_sent": email_sent
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[AUTH] OTP request error: {str(e)}")
+        logger.error(f"[AUTH] OTP request error: {str(e)}")
         raise HTTPException(status_code=400, detail="Failed to send OTP")
 
 @router.post("/login/otp/verify", response_model=Token)
@@ -453,7 +533,7 @@ def verify_otp_login(request: OTPVerifyRequest, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Find valid OTP
+        # Verify OTP
         user_otp = db.query(UserOTP).filter(
             UserOTP.user_id == user.id,
             UserOTP.otp == request.otp,
@@ -468,13 +548,15 @@ def verify_otp_login(request: OTPVerifyRequest, db: Session = Depends(get_db)):
         user_otp.used = True
         db.commit()
         
-        # Generate tokens
+        # Create tokens
         access_token = create_access_token(data={"user_id": user.id, "email": user.email})
         refresh_token = create_access_token(data={"user_id": user.id}, expires_delta=timedelta(days=7))
         
         return Token(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[AUTH] OTP verify error: {str(e)}")
+        logger.error(f"[AUTH] OTP verify error: {str(e)}")
         raise HTTPException(status_code=400, detail="OTP verification failed")
 
 @router.post("/change-password")
@@ -492,8 +574,10 @@ def change_password(
         db.commit()
         
         return {"message": "Password changed successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[AUTH] Change password error: {str(e)}")
+        logger.error(f"[AUTH] Change password error: {str(e)}")
         raise HTTPException(status_code=400, detail="Password change failed")
 
 @router.post("/token/refresh", response_model=Token)
@@ -511,8 +595,10 @@ def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
         
         new_access_token = create_access_token(data={"user_id": user.id, "email": user.email})
         return Token(access_token=new_access_token, refresh_token=refresh_token, token_type="bearer")
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[AUTH] Token refresh error: {str(e)}")
+        logger.error(f"[AUTH] Token refresh error: {str(e)}")
         raise HTTPException(status_code=401, detail="Token refresh failed")
 
 @router.get("/token/verify")
@@ -527,14 +613,17 @@ def verify_token_endpoint(credentials: HTTPAuthorizationCredentials = Depends(se
                 detail="Invalid token"
             )
         return {"valid": True, "user_id": payload.get("user_id")}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"[AUTH] Token verify error: {str(e)}")
+        logger.error(f"[AUTH] Token verify error: {str(e)}")
         raise HTTPException(status_code=401, detail="Token verification failed")
 
 @router.post("/logout")
 def logout(current_user: dict = Depends(get_current_user)):
     """Logout user (client should remove tokens)"""
     return {"message": "Successfully logged out"}
+
 @router.get("/debug-env")
 def debug_environment():
     """Debug environment variables on Render"""
@@ -545,75 +634,33 @@ def debug_environment():
         "SMTP_PORT": os.getenv("SMTP_PORT"), 
         "SMTP_USER": os.getenv("SMTP_USER"),
         "FROM_EMAIL": os.getenv("FROM_EMAIL"),
-        "SMTP_PASS_SET": bool(os.getenv("SMTP_PASS")),
-        "SMTP_PASS_LENGTH": len(os.getenv("SMTP_PASS", "")),
+        "SENDGRID_API_KEY_SET": bool(os.getenv("SENDGRID_API_KEY")),
+        "SENDGRID_API_KEY_LENGTH": len(os.getenv("SENDGRID_API_KEY", "")),
         "DEBUG": os.getenv("DEBUG"),
         "ENVIRONMENT": os.getenv("ENVIRONMENT"),
         "RENDER": os.getenv("RENDER"),
-        "RENDER_EXTERNAL_URL": os.getenv("RENDER_EXTERNAL_URL")
+        "RENDER_EXTERNAL_URL": os.getenv("RENDER_EXTERNAL_URL"),
+        "BASE_URL": BASE_URL,
+        "FRONTEND_URL": FRONTEND_URL
     }
     
-    print(f" [ENV DEBUG] Environment variables: {env_vars}")
-    
+    logger.debug(f"[ENV DEBUG] Environment variables: {env_vars}")
     return env_vars
 
 @router.get("/debug-email")
 def debug_email_config():
     """Debug endpoint to check email configuration"""
     import os
-    from app.core.config import settings
     
     config_info = {
-        "SMTP_HOST": settings.SMTP_HOST,
-        "SMTP_PORT": settings.SMTP_PORT,
-        "SMTP_USER": settings.SMTP_USER,
         "FROM_EMAIL": settings.FROM_EMAIL,
-        "SMTP_PASS_SET": bool(settings.SMTP_PASS),
+        "SENDGRID_API_KEY_SET": bool(settings.SENDGRID_API_KEY),
+        "SENDGRID_API_KEY_LENGTH": len(settings.SENDGRID_API_KEY) if settings.SENDGRID_API_KEY else 0,
         "DEBUG": settings.DEBUG,
-        "ENVIRONMENT": os.getenv("ENVIRONMENT", "unknown")
+        "ENVIRONMENT": "PRODUCTION" if settings.IS_PRODUCTION else "DEVELOPMENT",
+        "BASE_URL": BASE_URL,
+        "FRONTEND_URL": FRONTEND_URL
     }
     
-    print(f" [DEBUG] Email Configuration: {config_info}")
-    
-    # Test SMTP connection
-    try:
-        import smtplib
-        print(f" [DEBUG] Testing SMTP connection to {settings.SMTP_HOST}:{settings.SMTP_PORT}")
-        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            print(f" [DEBUG] SMTP connection successful")
-            server.login(settings.SMTP_USER, settings.SMTP_PASS)
-            print(f" [DEBUG] SMTP login successful")
-            config_info["smtp_test"] = "SUCCESS"
-    except Exception as e:
-        print(f"[DEBUG] SMTP test failed: {str(e)}")
-        config_info["smtp_test"] = f"FAILED: {str(e)}"
-    
+    logger.debug(f"[DEBUG] Email Configuration: {config_info}")
     return config_info
-
-
-@router.get("/auth/google")
-async def google_auth():
-    """Redirect to Google OAuth page"""
-    auth_url = GoogleOAuthService.get_google_auth_url()
-    return RedirectResponse(auth_url)
-
-@router.get("/auth/google/callback")
-async def google_callback(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """Handle Google OAuth callback"""
-    code = request.query_params.get("code")
-    error = request.query_params.get("error")
-    
-    if error:
-        raise HTTPException(status_code=400, detail=f"Google OAuth error: {error}")
-    
-    if not code:
-        raise HTTPException(status_code=400, detail="No authorization code provided")
-    
-    try:
-        result = await GoogleOAuthService.handle_google_callback(db, code)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))

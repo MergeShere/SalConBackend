@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vendor Verification - Salon Connect</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            aspect-ratio: 4/3;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .overlay-id {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%; height: 55%;
+            border: 2px dashed rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+        }
+        .overlay-face {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 280px; height: 380px;
+            border: 3px solid #4CAF50;
+            border-radius: 50%;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+        }
+        .scan-line {
+            position: absolute;
+            width: 100%; height: 2px;
+            background: #4CAF50;
+            top: 0;
+            animation: scan 2.5s infinite linear;
+            box-shadow: 0 0 4px #4CAF50;
+        }
+        @keyframes scan { 0% { top: 0; opacity: 0; } 50% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 3px solid #3498db;
+            width: 20px; height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 min-h-screen">
+
+<nav class="bg-white shadow-sm p-4">
+    <div class="max-w-4xl mx-auto flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">SC</div>
+            <span class="font-bold text-lg text-blue-900">Salon Connect</span>
+        </div>
+        <div class="text-sm text-green-600 font-medium bg-green-50 px-3 py-1 rounded-full">
+            <i class="fas fa-lock text-xs mr-1"></i> Secure Verification
+        </div>
+    </div>
+</nav>
+
+<div class="max-w-md mx-auto py-8 px-4">
+    
+    <div id="view-intro" class="bg-white p-6 rounded-2xl shadow-lg text-center">
+        <div class="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-id-card text-3xl text-blue-600"></i>
+        </div>
+        <h1 class="text-2xl font-bold mb-2">Verify Your Identity</h1>
+        <p class="text-gray-500 mb-6 text-sm">To prevent fraud and activate your <strong>30-Day Free Trial</strong>, we need to verify your government ID.</p>
+        
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-left mb-6">
+            <p class="text-xs text-yellow-800 font-semibold mb-1"><i class="fas fa-info-circle mr-1"></i> Accepted Documents:</p>
+            <div class="flex gap-2 mt-2">
+                <span class="text-xs bg-white border px-2 py-1 rounded text-gray-600">Ghana Card</span>
+                <span class="text-xs bg-white border px-2 py-1 rounded text-gray-600">Passport</span>
+                <span class="text-xs bg-white border px-2 py-1 rounded text-gray-600">Driver's Lic.</span>
+            </div>
+        </div>
+
+        <button onclick="startVerification()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold shadow-lg hover:bg-blue-700 transition">Start Verification</button>
+    </div>
+
+    <div id="view-camera" class="hidden bg-white p-4 rounded-2xl shadow-lg">
+        <div class="flex justify-between items-center mb-4">
+            <h2 id="camTitle" class="font-bold text-lg">Scan Front ID</h2>
+            <span id="stepIndicator" class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">Step 1/3</span>
+        </div>
+
+        <div class="mb-4">
+            <select id="docType" class="w-full p-2 border rounded-lg text-sm bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="ghana_card">Ghana Card (GHA-)</option>
+                <option value="drivers_license">Driver's License</option>
+                <option value="voters_id">Voter's ID</option>
+                <option value="passport">Passport</option>
+            </select>
+        </div>
+
+        <div class="camera-wrapper mb-4">
+            <video id="video" autoplay playsinline></video>
+            <div id="overlay" class="overlay-id">
+                <div class="scan-line"></div>
+                <div class="absolute bottom-2 left-0 w-full text-center text-white text-xs font-bold shadow-black">
+                    Position document inside frame
+                </div>
+            </div>
+            <canvas id="canvas" class="hidden"></canvas>
+            <img id="preview" class="hidden w-full h-full object-cover">
+        </div>
+
+        <div class="flex gap-3">
+            <button onclick="retakePhoto()" id="btnRetake" class="hidden flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold">Retake</button>
+            <button onclick="capturePhoto()" id="btnCapture" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold shadow-lg">
+                <i class="fas fa-camera mr-2"></i> Capture
+            </button>
+            <button onclick="confirmPhoto()" id="btnConfirm" class="hidden flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold shadow-lg">
+                Confirm <i class="fas fa-check ml-1"></i>
+            </button>
+        </div>
+        
+        <p id="processingMsg" class="hidden text-center text-xs text-blue-600 font-bold mt-3">
+            <span class="loader align-middle mr-1"></span> Processing image with AI...
+        </p>
+    </div>
+
+    <div id="view-submit" class="hidden bg-white p-6 rounded-2xl shadow-lg">
+        <div class="text-center mb-6">
+            <div class="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                <i class="fas fa-check"></i>
+            </div>
+            <h2 class="font-bold text-xl">Verification Complete</h2>
+            <p class="text-gray-500 text-xs">Please confirm the details extracted from your ID.</p>
+        </div>
+
+        <form id="kycForm" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <img id="finalFront" class="w-full h-20 object-cover rounded border bg-gray-50">
+                <img id="finalSelfie" class="w-full h-20 object-cover rounded border bg-gray-50">
+            </div>
+
+            <div class="relative">
+                <label class="text-xs font-bold text-gray-500 uppercase">ID Number</label>
+                <input type="text" id="idNumber" class="w-full border-b border-gray-300 py-2 focus:border-blue-600 outline-none font-mono text-lg font-bold text-gray-800" placeholder="GHA-000000000-0">
+                <i class="fas fa-magic absolute right-0 bottom-3 text-blue-400" title="Auto-filled by AI"></i>
+            </div>
+
+            <div>
+                <label class="text-xs font-bold text-gray-500 uppercase">Full Name</label>
+                <input type="text" id="fullName" class="w-full border-b border-gray-300 py-2 focus:border-blue-600 outline-none">
+            </div>
+
+            <div>
+                <label class="text-xs font-bold text-gray-500 uppercase">Date of Birth</label>
+                <input type="date" id="dob" class="w-full border-b border-gray-300 py-2 focus:border-blue-600 outline-none">
+            </div>
+        </form>
+
+        <button onclick="submitApplication()" id="btnFinalSubmit" class="w-full mt-8 bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg text-lg hover:bg-green-700 transition">
+            Start 30-Day Free Trial
+        </button>
+    </div>
+
+</div>
+
+<div id="modalSuccess" class="hidden fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-2xl p-8 max-w-sm text-center transform transition-all scale-100">
+        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-rocket text-3xl text-green-600"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">You're All Set!</h2>
+        <p class="text-gray-600 mb-6">Your identity has been verified and your <strong>30-Day Premium Trial</strong> is now active.</p>
+        <p class="text-xs text-gray-400 mb-6">A confirmation email has been sent to you.</p>
+        <a href="/vendor/dashboard" class="block w-full bg-blue-600 text-white py-3 rounded-lg font-bold">Go to Dashboard</a>
+    </div>
+</div>
+
+<script>
+    // --- APP STATE ---
+    // IMPORTANT: Replace with your actual auth token retrieval method
+    const AUTH_TOKEN = localStorage.getItem('access_token'); 
+    
+    // API Endpoints
+    const API_URL = "http://localhost:8000/api/kyc"; // CHANGE THIS IN PRODUCTION
+
+    let currentStep = 'front'; // front -> back -> selfie
+    let capturedData = { front: null, back: null, selfie: null };
+    let stream = null;
+
+    // --- DOM ELEMENTS ---
+    const els = {
+        views: { intro: document.getElementById('view-intro'), camera: document.getElementById('view-camera'), submit: document.getElementById('view-submit') },
+        video: document.getElementById('video'),
+        canvas: document.getElementById('canvas'),
+        preview: document.getElementById('preview'),
+        overlay: document.getElementById('overlay'),
+        btns: { capture: document.getElementById('btnCapture'), retake: document.getElementById('btnRetake'), confirm: document.getElementById('btnConfirm') },
+        text: { title: document.getElementById('camTitle'), step: document.getElementById('stepIndicator') }
+    };
+
+    function switchView(viewName) {
+        Object.values(els.views).forEach(el => el.classList.add('hidden'));
+        els.views[viewName].classList.remove('hidden');
+    }
+
+    async function startVerification() {
+        switchView('camera');
+        startCamera('environment'); // Rear camera first
+    }
+
+    async function startCamera(facingMode) {
+        try {
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            
+            stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                audio: false 
+            });
+            els.video.srcObject = stream;
+            els.video.classList.remove('hidden');
+            els.preview.classList.add('hidden');
+            
+            // Reset buttons
+            els.btns.capture.classList.remove('hidden');
+            els.btns.retake.classList.add('hidden');
+            els.btns.confirm.classList.add('hidden');
+
+        } catch (err) {
+            alert("Camera Error: " + err.message);
+        }
+    }
+
+    function capturePhoto() {
+        // Draw video frame to canvas
+        els.canvas.width = els.video.videoWidth;
+        els.canvas.height = els.video.videoHeight;
+        els.canvas.getContext('2d').drawImage(els.video, 0, 0);
+        
+        // Convert to Blob
+        els.canvas.toBlob(blob => {
+            const url = URL.createObjectURL(blob);
+            els.preview.src = url;
+            
+            // Store blob temporarily
+            capturedData[currentStep + '_blob'] = blob;
+
+            // UI Updates
+            els.video.classList.add('hidden');
+            els.preview.classList.remove('hidden');
+            els.btns.capture.classList.add('hidden');
+            els.btns.retake.classList.remove('hidden');
+            els.btns.confirm.classList.remove('hidden');
+        }, 'image/jpeg', 0.9);
+    }
+
+    function retakePhoto() {
+        els.video.classList.remove('hidden');
+        els.preview.classList.add('hidden');
+        els.btns.capture.classList.remove('hidden');
+        els.btns.retake.classList.add('hidden');
+        els.btns.confirm.classList.add('hidden');
+    }
+
+    async function confirmPhoto() {
+        const file = new File([capturedData[currentStep + '_blob']], `${currentStep}.jpg`, { type: "image/jpeg" });
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('doc_type', currentStep === 'selfie' ? 'selfie' : 'front'); // Simple mapping
+
+        // Show loading
+        els.btns.confirm.disabled = true;
+        els.btns.confirm.innerHTML = `<span class="loader"></span> Uploading...`;
+        document.getElementById('processingMsg').classList.remove('hidden');
+
+        try {
+            const res = await axios.post(`${API_URL}/upload-document`, formData, {
+                headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+            });
+
+            capturedData[currentStep] = res.data.url;
+
+            // If front ID, auto-fill extracted data
+            if (currentStep === 'front' && res.data.extracted_data) {
+                document.getElementById('idNumber').value = res.data.extracted_data.id_number || "";
+                document.getElementById('fullName').value = res.data.extracted_data.full_name || "";
+                document.getElementById('dob').value = res.data.extracted_data.date_of_birth || "";
+                console.log("OCR Data Extracted:", res.data.extracted_data);
+            }
+
+            // Move to next step
+            if (currentStep === 'front') {
+                currentStep = 'back';
+                els.text.title.innerText = "Scan ID Back";
+                els.text.step.innerText = "Step 2/3";
+                retakePhoto(); // Reset UI for next shot
+                startCamera('environment');
+            } else if (currentStep === 'back') {
+                currentStep = 'selfie';
+                els.text.title.innerText = "Take a Selfie";
+                els.text.step.innerText = "Step 3/3";
+                els.overlay.classList.remove('overlay-id');
+                els.overlay.classList.add('overlay-face'); // Change overlay shape
+                retakePhoto();
+                startCamera('user'); // Switch to front camera
+            } else {
+                // Done with capture
+                showSubmitView();
+            }
+
+        } catch (err) {
+            alert("Upload Failed: " + (err.response?.data?.detail || err.message));
+            els.btns.confirm.disabled = false;
+            els.btns.confirm.innerText = "Confirm";
+        } finally {
+            document.getElementById('processingMsg').classList.add('hidden');
+        }
+    }
+
+    function showSubmitView() {
+        if(stream) stream.getTracks().forEach(t => t.stop());
+        switchView('submit');
+        document.getElementById('finalFront').src = capturedData.front;
+        document.getElementById('finalSelfie').src = capturedData.selfie;
+    }
+
+    async function submitApplication() {
+        const submitBtn = document.getElementById('btnFinalSubmit');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<span class="loader mr-2"></span> Verifying Identity...`;
+
+        const payload = {
+            id_type: document.getElementById('docType').value,
+            id_number: document.getElementById('idNumber').value,
+            full_name: document.getElementById('fullName').value,
+            date_of_birth: document.getElementById('dob').value,
+            id_front_url: capturedData.front,
+            id_back_url: capturedData.back || capturedData.front, 
+            selfie_url: capturedData.selfie
+        };
+
+        try {
+            const res = await axios.post(`${API_URL}/submit`, payload, {
+                headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+            });
+            
+            // Show success modal
+            document.getElementById('modalSuccess').classList.remove('hidden');
+            
+        } catch (err) {
+            alert("Verification Failed: " + (err.response?.data?.detail || "Please ensure your selfie matches your ID."));
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = "Try Again";
+        }
+    }
+</script>
+
+</body>
+</html>

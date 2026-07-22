@@ -1,25 +1,27 @@
-# create_tables.py (separate script)
-from app.database import engine
-from app.models.user import User, UserProfile
-from app.models.salon import Salon, Service, Review, SalonImage
-from app.models.booking import Booking, BookingItem
-from app.models.payment import Payment
+import os
+import sys
 
-def create_all_tables():
-    print("Creating database tables...")
+# Add the current directory to sys.path so we can import from app
+sys.path.append(os.getcwd())
+
+from app.database import engine, Base
+# Import all models to ensure they are registered with Base.metadata
+from app.models import (
+    User, UserProfile, PasswordReset, UserRole, user_favorites, PendingUser, UserOTP,
+    Salon, Service, SalonImage, Review,
+    Booking, BookingItem, BookingStatus,
+    Payment, PaymentStatus, PaymentMethod,
+    VendorBusinessInfo, VendorKYC, IDType, KYCStatus
+)
+
+def create_tables():
+    print("Creating tables in database...")
     try:
-        User.metadata.create_all(bind=engine)
-        UserProfile.metadata.create_all(bind=engine)
-        Salon.metadata.create_all(bind=engine)
-        Service.metadata.create_all(bind=engine)
-        Review.metadata.create_all(bind=engine)
-        SalonImage.metadata.create_all(bind=engine)
-        Booking.metadata.create_all(bind=engine)
-        BookingItem.metadata.create_all(bind=engine)
-        Payment.metadata.create_all(bind=engine)
-        print(" All tables created successfully!")
+        # This checks the DB and creates any missing tables defined in your models
+        Base.metadata.create_all(bind=engine)
+        print("✅ Tables created successfully!")
     except Exception as e:
-        print(f"Error creating tables: {e}")
+        print(f"❌ Error creating tables: {e}")
 
 if __name__ == "__main__":
-    create_all_tables()
+    create_tables()
